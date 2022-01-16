@@ -1,0 +1,56 @@
+// Adventurer Class
+// Makes your starting gear and talents random
+
+gs.pc.talents["talentList"] = [];
+for(let i = 0; i < 5; i++){
+	debug.learnTalent(gs.talentList[util.randInt(0, gs.talentList.length)]["name"]);
+}
+gs.pc.talents["talentList"].forEach(function (talent){
+    talent.rank = 0;
+});
+let basicTalents = gs.talentList.filter(active => !active.attributes && active.tier == 1);
+debug.learnTalent(basicTalents[util.randInt(0, basicTalents.length)]["name"]);
+
+gs.pc.inventory.clear()
+
+switch (util.randInt(0, 8)) {
+  		case 0:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.PRIMARY).addItem(Item.createItem('ShortSword'));
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.SECONDARY).addItem(Item.createItem('WoodenBuckler'));
+    break;
+
+  		case 1:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.PRIMARY).addItem(Item.createItem('HandAxe'));
+    break;
+
+ 		case 2:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.RANGE).addItem(Item.createItem('ShortBow'));
+    break;
+
+  		case 3:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.PRIMARY).addItem(Item.createItem('ShortSword'));	
+    break;
+
+  		case 4:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.RANGE).addItem(Item.createItem('StaffOfFire'));
+    break;
+
+  		case 5:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.RANGE).addItem(Item.createItem('StaffOfIce'));
+    break;
+
+  		case 6:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.RANGE).addItem(Item.createItem('StaffOfStorms'));
+    break;
+
+  		case 7:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.RANGE).addItem(Item.createItem('StaffOfPoison'));
+
+    break;
+
+  		case 8:
+		gs.pc.inventory.equipmentSlot(ITEM_SLOT.RANGE).addItem(Item.createItem('StaffOfMagicMissiles'));
+    break;
+};
+debug.addItem('Meat');
+delete(basicTalents);
