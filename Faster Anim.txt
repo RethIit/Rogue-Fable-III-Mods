@@ -1,0 +1,103 @@
+//Faster Animations - Quality of Life Change
+//Reduces animation length for all enemy attacks along with some friendly ones.
+
+gs.animEffectTypes['ColdShoot'].speed=40;
+gs.animEffectTypes['EXPCircle'].speed=40;
+gs.animEffectTypes['EXPParticles'].speed=40;
+gs.animEffectTypes['ElectricShoot'].speed=40;
+gs.animEffectTypes['FireCircle'].speed=30;
+gs.animEffectTypes["FireShoot"].speed=40;
+gs.animEffectTypes['FireParticles'].speed=30;
+gs.animEffectTypes['HealingCircle'].speed=40;
+gs.animEffectTypes['HealingParticles'].speed=40;
+gs.animEffectTypes['Hearts'].speed=40;
+gs.animEffectTypes['Hit'].speed=40;
+gs.animEffectTypes['IceCircle'].speed=30;
+gs.animEffectTypes['IceParticles'].speed=30;
+gs.animEffectTypes['MagicShoot'].speed=40;
+gs.animEffectTypes['ManaCircle'].speed=40;
+gs.animEffectTypes['ManaParticles'].speed=40;
+gs.animEffectTypes['Poison'].speed=40;
+gs.animEffectTypes['ReviveSkeletonBG'].speed=40;
+gs.animEffectTypes['ReviveSkeletonFG'].speed=40;
+gs.animEffectTypes['Smite'].speed=30;
+gs.animEffectTypes['SummonCircle'].speed=80;
+gs.animEffectTypes['SummonParticles'].speed=40;
+gs.animEffectTypes['TornadoSuck'].speed=100;
+gs.animEffectTypes['ToxicShoot'].speed=40;
+gs.animEffectTypes['YellowCircle'].speed=30;
+gs.animEffectTypes['YellowParticles'].speed=30;
+UIPopUpText.prototype.init = function (position, character, text, color = 'White') {
+	this.relativePos.x = position.x;
+	this.relativePos.y = position.y;
+	
+	// Setup Text:
+	this.str = text;
+	
+	this.text.setText(text);
+	this.text.setFont('PixelFontOutline6-' + color);
+	this.text.alpha = 1.0;
+	this.text.visible = true;
+	gs.popUpTextSpritesGroup.bringToTop(this.text);
+	
+	// Properties:
+	this.color = color;
+	this.character = character;
+	this.life = 35;
+	this.isAlive = true;
+	this.count = 1;
+};
+UIPopUpText.prototype.update = function () {
+	// Disapear:
+	if (this.life === 0) {
+		this.isAlive = false;
+		this.text.visible = false;
+	}
+	// Pause and fade:
+	else if (this.life < 10) {
+		this.life -= 1;
+	}
+	// Pause:
+	else if (this.life < 30) {
+		this.life -= 1;
+	}
+	// Move upwards:
+	else {
+		this.life -= 1;
+		this.relativePos.y -= 1;
+	}
+	
+	// Offset from character:
+	if (this.character) {
+		this.text.x = this.character.body.position.x + this.relativePos.x;
+		this.text.y = this.character.body.position.y + this.relativePos.y;
+	}
+	else {
+		this.text.x = this.relativePos.x;
+		this.text.y = this.relativePos.y;
+	}
+};
+gs.animEffectTypes['ColdShoot'].pauseGame=false;
+gs.animEffectTypes['EXPCircle'].pauseGame=false;
+gs.animEffectTypes['EXPParticles'].pauseGame=false;
+gs.animEffectTypes['ElectricShoot'].pauseGame=false;
+gs.animEffectTypes['FireCircle'].pauseGame=false;
+gs.animEffectTypes["FireShoot"].pauseGame=false;
+gs.animEffectTypes['FireParticles'].pauseGame=false;
+gs.animEffectTypes['HealingParticles'].pauseGame=false;
+gs.animEffectTypes['Hearts'].pauseGame=false;
+gs.animEffectTypes['Hit'].pauseGame=false;
+gs.animEffectTypes['IceCircle'].pauseGame=false;
+gs.animEffectTypes['IceParticles'].pauseGame=false;
+gs.animEffectTypes['MagicShoot'].pauseGame=false;
+gs.animEffectTypes['ManaCircle'].pauseGame=false;
+gs.animEffectTypes['ManaParticles'].pauseGame=false;
+gs.animEffectTypes['Poison'].pauseGame=false;
+gs.animEffectTypes['ReviveSkeletonBG'].pauseGame=false;
+gs.animEffectTypes['ReviveSkeletonFG'].pauseGame=false;
+gs.animEffectTypes['Smite'].pauseGame=false;
+gs.animEffectTypes['SummonParticles'].pauseGame=false;
+gs.animEffectTypes['TornadoSuck'].pauseGame=false;
+gs.animEffectTypes['ToxicShoot'].pauseGame=false;
+gs.animEffectTypes['YellowCircle'].pauseGame=false;
+gs.animEffectTypes['YellowParticles'].pauseGame=false;
