@@ -1,0 +1,1044 @@
+﻿// Natural One mod v1.0, by Patashu, for Rogue Fable III v2.0.6
+// 1) When the player or an ally takes non-crit damage, there is a 5% chance it becomes a crit.
+// 2) When an enemy takes damage or is inflicted with a negative status effect, there is a 5% chance it is negated.
+// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+// 4) When an enemy makes a move, there is a 5% chance it becomes free. (Max one per turn)
+// 5) When an enemy detects you, there is a 5% chance it immediately gets to move.
+
+Character.prototype.takeDamage = function (amount, damageType, flags = {}) {
+	var isCrit = false,
+		critMultiplier;
+	var isNatOne = false;
+	
+	this.updateStats();
+	
+	if (this === gs.pc) {
+		critMultiplier = CRIT_MULTIPLIER;
+	}
+	else {
+		critMultiplier = gs.pc.critMultiplier;
+	}
+	
+	if (this.isDamageImmune || !this.isAlive) {
+		return 0;
+	}
+	
+	// Discord Damage Multiplier:
+	if (this.damageMultiplier && !flags.noDiscord) {
+		amount = Math.ceil(amount * this.damageMultiplier);
+	}
+	
+	// Unaware Crit (sneak attack):
+	if (flags.killer === gs.pc && this !== gs.pc && (!this.isAgroed || this.isAsleep) && this.faction === FACTION.HOSTILE) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+    // Reduce fire damage when wet:
+	if (damageType === DAMAGE_TYPE.FIRE && this.isWet) {
+		amount = Math.ceil(amount * 0.25);
+		flags.neverCrit = true;
+	}
+	
+	// Flammable Crit:
+	if (damageType === DAMAGE_TYPE.FIRE && this.isFlammable) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+	// Wet Shock:
+    if (damageType === DAMAGE_TYPE.SHOCK && this.isWet) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+    }
+    
+	// Unstable Crit:
+	if (damageType === DAMAGE_TYPE.PHYSICAL && this.isUnstable) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+	// Any attacker can force a crit hit:
+	if (flags.isCrit) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+	// 1) When the player or an ally takes non-crit damage, there is a 5% chance it becomes a crit.
+	if ((this === gs.pc || this.faction === FACTION.PLAYER) && !isCrit && util.frac() < 0.05)
+	{
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+		isNatOne = true;
+	}
+	
+	// DAMAGE_TYPE.NONE: always max damage
+	if (damageType === DAMAGE_TYPE.NONE) {
+		// None damage type is always max damage
+	}
+	// 0.5 - 1.0 Random Damage
+	else {
+		amount = Math.floor(amount * 0.50) + util.randInt(1, Math.ceil(amount * 0.50));
+	}
+	
+    // Defense mitigates damage:
+	if (!flags.noMitigation) {
+		amount = this.mitigateDamage(amount, damageType);
+	}
+	
+	// 2) When an enemy takes damage or is inflicted with a negative status effect, there is a 5% chance it is negated.
+	if ((this.faction === FACTION.HOSTILE) && util.frac() < 0.05)
+	{
+		amount = 0;
+		isCrit = false;
+		isNatOne = true;
+	}
+	
+	// Killing Strikes:
+	let isKillingStrike = flags.killer === gs.pc
+		&& gs.pc.talents.getTalentRank('KillingStrikes') > 0
+		&& damageType === DAMAGE_TYPE.PHYSICAL
+		&& flags.attackType !== 'DamageShield'
+		&& this.currentHp / this.maxHp <= gs.talents.KillingStrikes.attributes.hpPercent[gs.pc.talents.getTalentRank('KillingStrikes')];
+	
+	// Pop Up Text:
+	if (isKillingStrike) {
+		this.popUpText('Kill Strike!', 'Red');
+		amount = this.currentHp;
+	}
+	// Crit:
+	else if (isCrit) {
+		if (isNatOne) {
+			this.popUpText('Nat 1 Crt ' + amount, 'Purple');
+		}
+		else {
+			this.popUpText('Crt ' + amount, 'Red');
+		}
+	}
+	// Damage Shield:
+	else if (flags.attackType === 'DamageShield') {
+		this.popUpText('DS ' + amount, 'Red');
+	}
+	// Nat 1 Whiff:
+	else if (isNatOne) {
+		this.popUpText('Nat 1 Whiff', 'Purple');
+	}
+	// Damage:
+	else {
+		this.popUpText(amount, 'Red');
+	}
+	
+	// Achievements:
+	if (this === gs.pc && amount >= 100) {
+		achievements.get('STONE_WALL');
+	}
+	if (this !== gs.pc && amount >= 100 && flags.killer === gs.pc) {
+		achievements.get('ONE_PUNCH');
+	}
+	if (this === gs.pc && amount > 0) {
+		this.isUntouchable = false;
+	}
+
+
+    // Cap damage to currentHp (for lifetaps):
+	let cappedAmount = Math.min(amount, this.currentHp);
+
+    // Apply damage:
+	if (!(this === gs.pc && gs.debugProperties.disableDamage)) {
+		// Spirit Shield:
+		if (this.hasSpiritShield) {
+			let mp = Math.min(this.currentMp, Math.floor(amount / 2));
+			this.currentMp -= mp;
+			amount -= mp;
+		}
+		
+		// Shield of Ice:
+		if (this.statusEffects.has('ShieldOfIce') && !util.inArray(flags.killer, ['Poison', 'Hunger', 'Cannibalise'])) {
+			if (amount > this.statusEffects.get('ShieldOfIce').duration) {
+				amount -= this.statusEffects.get('ShieldOfIce').duration;
+				this.statusEffects.remove('ShieldOfIce');
+			}
+			else {
+				this.statusEffects.get('ShieldOfIce').duration -= amount;
+				amount = 0;
+			}
+		}
+		
+		this.currentHp -= amount;
+	}
+	
+    // Hit Sound:
+	if (this.currentHp > 0) {
+		if (isCrit) {
+			gs.playSound(gs.sounds.playerHit, this.tileIndex);
+			//gs.playSound(gs.sounds.death, this.tileIndex);
+		}
+		else {
+			gs.playSound(gs.sounds.playerHit, this.tileIndex);
+		}
+	}
+	
+    // Death:
+	if (this.currentHp <= 0) {
+		if (flags.killer && flags.killer.onKill) {
+			flags.killer.onKill(this);
+		}
+		else if (this !== gs.pc) {
+			gs.pc.onKill(this);
+		}
+		
+		this.death(damageType, flags);
+	}
+	
+	// Blood splatter:
+	if (isCrit && this.isAlive && !this.type.noBlood && util.frac() < 0.25) {
+		this.bloodSplatter();
+	}
+    
+    this.onTakeDamage(flags);
+	this.statusEffects.onTakeDamage(damageType, amount, flags);
+	
+	// Remove ambient cold:
+	if (damageType === DAMAGE_TYPE.FIRE) {
+		this.coldLevel = 0;
+	}
+
+	return cappedAmount;
+};
+
+StatusEffects.prototype.add = function (typeName, properties, flags = {}) {
+	var newStatusEffect, oldStatusEffect;
+	
+	if (!this.character.isAlive) {
+		return;
+	}
+	
+	if (this.character.faction === FACTION.NEUTRAL || this.character.isDamageImmune) {
+		return;
+	}
+	
+	// Immune:
+	if (util.inArray(typeName, this.character.type.statusEffectImmunities)) {
+		this.character.popUpText('Immune'); 
+		return;
+	}
+	
+	// Mental Resistance:
+	if (this.character.mentalResistance && util.inArray(typeName, ['Confusion', 'NPCCharm', 'Feared'])) {
+		this.character.popUpText('Resisted ' + gs.statusEffectTypes[typeName].niceName); 
+		return;
+	}
+	
+	// 2) When an enemy takes damage or is inflicted with a negative status effect, there is a 5% chance it is negated.
+	//I don't think there's a static definition of 'negative', so I'll just make my own
+	//I'll be nice and leave off: fleeing, charm/domination, terrain status effects
+	if (this.character.faction === FACTION.HOSTILE && util.frac() < 0.05 && util.inArray(typeName, ['Confusion', 'Feared', 'InfectiousDisease', 'Frozen', 'Draining', 'Discord', 'Constricted', 'StickyFlame', 'Stunned', 'DeepSleep', 'Netted', 'StrongPoison', 'LifeSpike', 'Immobile']))
+	{
+		//have to handle sleep bomb especially since it has on-contact side effects
+		if (typeName == "DeepSleep")
+		{
+			this.character.isAgroed = true;
+			this.character.isAsleep = false;
+		}
+		this.character.popUpText('Nat 1 Whiff ' + gs.statusEffectTypes[typeName].niceName, 'Purple'); 
+		return;
+	}
+	
+	newStatusEffect = this.createStatusEffect(typeName, properties);
+	
+	// Existing status effect:
+	if (this.has(newStatusEffect.name) && !newStatusEffect.canStack) {
+		oldStatusEffect = this.get(newStatusEffect.name);
+		
+		if (newStatusEffect.addDuration) {
+			oldStatusEffect.duration += newStatusEffect.duration;
+		}
+		else {
+			oldStatusEffect.duration = newStatusEffect.duration;
+		}
+	}
+	// New status effect:
+	else {
+		// Creating new effect:
+		newStatusEffect.onCreate(this.character);
+		this.list.push(newStatusEffect);
+		
+		// Creating Lighting:
+		if (!this.character.light && newStatusEffect.lightColor) {
+			newStatusEffect.light = gs.createLightCircle(this.character.sprite.position, newStatusEffect.lightColor, 40, 0, newStatusEffect.lightAlpha);
+			newStatusEffect.light.fade = false;
+			newStatusEffect.light.noLife = true;
+			this.character.light = newStatusEffect.light;
+		}
+
+		// requiresLoS:
+		if (newStatusEffect.requiresLoS) {
+			newStatusEffect.noLoSTurns = 0;
+		}
+		
+		// Pop Up Text:
+		if (gs.getTile(this.character.tileIndex).visible && !newStatusEffect.dontPopUpText && !flags.dontPopUpText) {
+			this.character.popUpText(gs.capitalSplit(newStatusEffect.niceName)); 
+		}
+	}
+	
+	this.character.updateStats();
+	
+	if (this.character.isImmobile) {
+		this.remove('Charge');
+		this.remove('SlowCharge');
+	}
+	
+	return newStatusEffect || oldStatusEffect; 
+};
+
+NPC.prototype.chooseAction = function () {
+	var validAbilityList, tileIndex = null, nearestHostile, char;
+	
+	// Debugging:
+	/*
+	if (this.type.name === 'DherossoTheDemonologist') {
+		let char = gs.characterList.find(char => char.type.name === 'HellPortal');
+		
+		if (char.timeToHatch === HELL_PORTAL_HATCH_TURNS + 1) {
+			let ability = this.abilities.list[0];
+			ability.target = {x: 12, y: 13};
+			this.useAbility(ability);
+		}
+		
+		this.endTurn(100);
+		return;
+	}
+	*/
+	
+	if (this.lightningRodTileIndex && !gs.getObj(this.lightningRodTileIndex, 'LightningRod')) {
+		this.lightningRodTileIndex = null;
+	}
+	
+	if (this.body.state === 'MOVING') {
+		return;
+	}
+
+	// Following an existing actionQueue:
+	if (this.actionQueue && this.actionQueue.length > 0) {
+		this.processActionQueue();
+		return;
+	}
+	
+	// NPC's detect player:
+	if (!this.isAgroed && this.faction === FACTION.HOSTILE && this.canDetectPlayer() && !gs.pc.isHidden) {
+		this.tryToAgroPlayer();
+		
+		if (this.waitTime > 0) {
+			// 5) When an enemy detects you, there is a 5% chance it immediately gets to move.
+			if (util.frac() < 0.05)
+			{
+				this.waitTime = 0;
+				this.popUpText('Nat 1 Detect', 'Purple');
+			}
+			else
+			{
+				this.endTurn(this.waitTime);
+				return;
+			}
+		}
+	}
+	
+	// Allies are always counted as agroed i.e. active:
+	if (this.faction === FACTION.PLAYER) {
+		this.isAgroed = true;
+	}
+	
+	// Special alwaysAgroed npcType tag:
+	if (this.type.alwaysAgroed) {
+		this.isAgroed = true;
+	}
+
+	// Skip turn:
+	if (this.shouldSkipTurn()) {
+		this.endTurn(ACTION_TIME);
+		return;
+	}
+	
+	// Monsters keep shouting for help when agroed:
+	let hasMoved = !util.vectorEqual(this.tileIndex, this.previousTileIndex);
+	let isVisible = gs.getTile(this.tileIndex).visible;
+	if (this.isAgroed && this.faction === FACTION.HOSTILE && !this.isDamageImmune && (hasMoved || isVisible)) {
+		this.shout();
+	}
+	
+	// Swimmer and immobile enemies that have not moved and are out of LoS will decay agro faster:
+	if (!hasMoved && !isVisible && (this.type.isSwimmer || this.type.isImmobile)) {
+		this.unagroTimer += 1;
+	}
+	
+	// Special abilities that should be given priority over most other actions:
+	let validSpecialAbility = this.getValidSpecialAbility();
+	if (validSpecialAbility) {
+		// Returning to wait for player to complete movement
+		if (gs.pc.body.state === 'MOVING') {
+			this.state = 'PAUSE';
+			return;
+		}
+
+		this.useAbility(validSpecialAbility);
+		return;
+	}
+
+	nearestHostile = this.getNearestHostile();
+	
+	// ROTATION:
+	if (this.type.rotateAim && gs.getTile(this.tileIndex).visible && nearestHostile && this.rotFacing !== this.getFacingToTarget(nearestHostile.tileIndex)) {
+		this.rotFacing = this.getNewFacing(nearestHostile.tileIndex);
+		this.rotateToFace();
+		this.endTurn(ACTION_TIME);
+		return;
+	}
+	
+	// MOVEMENT:
+	if (this.canMove()) {
+		// SLOW_PROJECTILE:
+		if (this.isSlowProjectile) {
+			this.slowProjectileMovement();
+			return;
+		} 
+		
+		// RUN AWAY:
+		if (this.isFeared && nearestHostile) {
+			tileIndex = this.getMoveAwayIndex(nearestHostile);
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+		
+		// SEEKING_MARKED_PLAYER:
+		if (!this.isAgroed && this.isWandering && gs.pc.isMarked) {
+			tileIndex = this.getMoveTowardsIndex(gs.pc.tileIndex);
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+		
+		// WANDERING:
+		if (!this.isAgroed && this.isWandering && !gs.pc.isMarked) {
+			tileIndex = this.getWanderIndex();
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+		
+		// MOVE_RANDOM:
+		if (this.isAgroed && this.type.isRandomMover && this.faction !== FACTION.PLAYER && util.frac() < RANDOM_MOVE_PERCENT) {
+			tileIndex = this.getRandomMoveIndex();
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+		
+		// MOVE_AWAY (KITING):
+		if (this.shouldKiteMove(nearestHostile)) {
+			tileIndex = this.getMoveAwayIndex(nearestHostile);
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+		
+		// MOVE_TOWARDS_SUMMONER:
+		if (this.type.maxDistanceToSummoner && util.distance(this.tileIndex, gs.getCharWithID(this.summonerId).tileIndex) > this.type.maxDistanceToSummoner) {
+			tileIndex = this.getMoveTowardsIndex(gs.getCharWithID(this.summonerId).tileIndex);
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+	}
+	
+	// nearestHostile
+	// Use ability:
+	if (this.isAgroed && !this.isFeared) {
+		validAbilityList = this.getValidAbility();
+		if (validAbilityList.length > 0) {
+			// Returning to wait for player to complete movement
+			if (gs.pc.body.state === 'MOVING') {
+				this.state = 'PAUSE';
+				return;
+			}
+			
+			this.useAbility(util.randElem(validAbilityList));
+			return;
+		}
+	}
+	
+	// Tentacles will end their turn here if they are far away from the player (they only move towards the player if he's already close):
+	if (this.type.name === 'Tentacle' && util.distance(this.tileIndex, gs.pc.tileIndex) >= 3) {
+		this.endTurn(ACTION_TIME);
+		return;
+	}
+	
+	// MOVE_TOWARDS:
+	if (this.isAgroed && this.canMove() && !this.isFeared) {
+		if (nearestHostile) {
+			// Moving to valid attack index:
+			if (!gs.getTile(this.tileIndex).visible || !gs.isRayProjectilePassable(this.tileIndex, nearestHostile.tileIndex) || util.distance(nearestHostile.tileIndex, this.tileIndex) > this.type.minAbilityRange) {
+				let attackTileIndex = this.getNearestAttackIndex(nearestHostile);
+				if (attackTileIndex) {
+					tileIndex = this.getMoveTowardsIndex(attackTileIndex);
+					if (tileIndex) {
+						this.moveTo(tileIndex);
+						return;
+					}
+				}
+			}
+			
+			// Kiters end their turn here:
+			// They are nearly to the limit of their minRange so they should not move towards the target
+			if (this.type.minRange
+				&& util.distance(nearestHostile.tileIndex, this.tileIndex) <= this.type.minAbilityRange
+				&& gs.isRayProjectilePassable(this.tileIndex, nearestHostile.tileIndex)) {
+				
+				this.endTurn(ACTION_TIME);
+				return;
+			}
+			
+			// Moving towards target:
+			tileIndex = this.getMoveTowardsIndex(nearestHostile.tileIndex);
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+		
+		// FOLLOW_PLAYER (ALLIES):
+		if (this.faction === FACTION.PLAYER) {
+			// Poof if no enemies (ex. fire balls):
+			if (this.type.poofWhenNoTarget && !nearestHostile) {
+				// Poof:
+				gs.createParticlePoof(this.tileIndex, 'PURPLE');
+				this.popUpText('Poof', 'White');
+				this.destroy();
+				return;
+			}
+			
+			// Allies are close enough to the player:
+			if (util.distance(this.tileIndex, gs.pc.tileIndex) < 1.5) {
+				this.endTurn(ACTION_TIME);
+				return;
+			}
+			
+			// Allies moving towards the player:
+			tileIndex = this.getMoveTowardsIndex(gs.pc.tileIndex);
+			if (tileIndex) {
+				this.moveTo(tileIndex);
+				return;
+			}
+		}
+		
+		// As a last resort, agroed npcs try to move towards the player:
+		tileIndex = this.getMoveTowardsIndex(gs.pc.tileIndex);
+		if (tileIndex) {
+			this.moveTo(tileIndex);
+			return;
+		}
+		
+	}
+
+	// End Turn:
+	this.endTurn(ACTION_TIME);
+};
+
+NPC.prototype.moveTo = function (tileIndex, endTurn = true) {
+	let prevTileIndex = {x: this.tileIndex.x, y: this.tileIndex.y};
+	
+	// Swap places:
+	if (gs.getChar(tileIndex)) {
+		gs.getChar(tileIndex).body.moveToTileIndex(this.tileIndex);
+	}
+	
+	// Opening Door:
+	if (gs.getObj(tileIndex, obj => obj.isSimpleDoor() && !obj.isOpen)) {
+		gs.getObj(tileIndex).interact(this);
+	}
+	// Moving:
+	else {
+		// Stick sprite if off screen:
+		if (!gs.getTile(tileIndex).visible && !gs.getTile(this.tileIndex).visible) {
+			this.body.snapToTileIndex(tileIndex);
+		}
+		else {
+			this.body.moveToTileIndex(tileIndex);
+		}
+	}
+	
+
+	// Kraken moving tentacles:
+	if (this.type.name === 'TheKraken') {
+		this.moveChildren(prevTileIndex, tileIndex);
+	}
+	
+	// 4) When an enemy makes a move, there is a 5% chance it becomes free. (Max one per turn)
+	if (endTurn && this.faction === FACTION.HOSTILE && this.isAgroed && (this.hasMoved === undefined || !this.hasMoved) && util.frac() < 0.05)
+	{
+		var endTurn = false;
+		this.gotFreeMove = true;
+		this.popUpText('Nat 1 Free Move', 'Purple');
+	}
+
+	// Has NPC Acted:
+	if (gs.getTile(this.tileIndex).visible && this.faction === FACTION.HOSTILE) {
+		gs.hasNPCActed = true;
+	}
+	
+	if (endTurn) {
+		this.gotFreeMove = false;
+		this.endTurn(this.moveTime());
+	}
+	
+};
+
+PlayerCharacter.prototype.chooseAction = function () {
+	// The player has input control so we can unpause any paused timers:
+	if (gs.timer && gs.timer.paused) {
+		gs.timer.resume();
+	}
+	
+	// Frozen or trapped skips turn:
+	if (this.isStunned || this.isAsleep) {
+		gs.pauseTime = 30;
+		this.endTurn(ACTION_TIME);
+		return;
+	}
+	
+	// Exploration:
+	// Grabbing new unexplored tile indices and 'clicking' on them:
+	if (this.isExploring && this.body.state === 'WAITING' && this.actionQueue.length === 0) {
+		this.startExploring();
+	}
+	
+	// Travelling:
+	if (this.isTravelling && this.body.state === 'WAITING' && this.actionQueue.length === 0) {
+		this.startTravelling();
+	}
+	
+	// Keyboard Controls:
+	this.keyBoardControls();
+	
+	// Using Zone Line:
+	// The player started to use a zone line in his previous turn.
+	// We ended the players turn to give NPCs a turn to act
+	// We now complete the turn
+	if (this.usingZoneLine) {
+		this.usingZoneLine = false;
+		
+		// We are still standing on a zone line i.e. we did not get knocked off
+		if (gs.getObj(this.tileIndex, obj => obj.isZoneLine()) || gs.isPit(this.tileIndex)) {
+			this.useZoneLine();
+			return;
+		}
+	}
+	
+	// Process click queue:
+	if (this.body.state === 'WAITING' && this.actionQueue.length > 0 && !this.eventQueue.isProcessing()) {
+		// Dash attack handled as special case:
+		if (this.statusEffects.has('DashAttack')) {
+			this.dashAttackChooseAction();
+			return;
+		}
+		
+		// If its possible to complete the click queue ahead of schedule:
+		if (this.tryToCompleteActionQueue()) {
+			this.actionQueue = [];
+			return;
+		}
+
+		// Get the next action the player has queued:
+		let click = this.actionQueue.pop();
+
+		// Waiting action:
+		if (click.type === 'WAIT') {
+			this.waitAction();
+			return;
+		}
+		
+		// Click tile Index action:
+		let tileIndex = click.tileIndex;
+
+		// Attacking:
+		// !click.allowUnsafeMove && this.canAttack(tileIndex) && (this.movementType !== MOVEMENT_TYPE.FAST || gs.getChar(tileIndex, 'Crate'))) {
+		if (this.canAttack(tileIndex) && (this.movementType !== MOVEMENT_TYPE.FAST || gs.getChar(tileIndex, 'Crate'))) {
+			this.attack(tileIndex);
+		}
+		// Opening Doors (need to continue path):
+		else if (gs.getObj(tileIndex, obj => obj.isSimpleDoor()) && this.canInteract(tileIndex)) {
+			this.interact(tileIndex);
+			
+			if (this.actionQueue.length > 0) {
+				let path = this.getPathTo(this.actionQueue[0].tileIndex, false);
+				if (path && path.length > 0) {
+					for (let i = 0; i < path.length; i += 1) {
+						this.actionQueue[i] = {type: 'CLICK', tileIndex: path[i]};
+					}
+				}
+			}
+		}
+		// Items:
+		else if (this.canReachItem(tileIndex)) {
+			this.tryToPickUpItem(tileIndex);
+		}
+		// Interact:
+		else if (this.canInteract(tileIndex)) {
+			this.interact(tileIndex);
+		}
+		// Dangerous Terrain:
+		else if (this.canMoveTo(tileIndex) && gs.isIndexSafe(this.tileIndex, this) && !gs.isIndexSafe(tileIndex, this) && !click.allowUnsafeMove) {
+			this.stopExploring();
+
+			if (!gs.globalData.unsafeMove) {
+				help.unsafeMoveDialog();
+			}
+			else {	
+				this.popUpText('Dangerous Terrain');
+			}
+		}
+		// Charmed moving:
+		else if (this.cantMoveFromCharm(tileIndex)) {
+			this.popUpText('Cannot run!', 'Red');
+			this.stopExploring();
+		}
+		// Pit:
+		else if (this.canJumpInPit(tileIndex)) {
+			this.jumpInPit(tileIndex);
+		}
+		// Dialog:
+		else if (this.canTalk(tileIndex)) {
+			this.talk(tileIndex);
+		}
+		// Moving:
+		else if (this.canMoveTo(tileIndex)) {
+			this.moveTo(tileIndex, click.focusCamera, !click.isFastMove);
+			
+			// Clear actionQueue for fastMoves:
+			// fastMoves occur one step at a time
+			if (click.isFastMove) {
+				this.currentSp -= 1;
+				// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+				if (util.frac() < 0.05)
+				{
+					//clear action queue since what the user wanted to do may no longer be wise/possible
+					this.popUpText('Nat 1 SP Fail', 'Purple');
+					this.actionQueue = [];
+					this.endTurn(this.moveTime());
+				}
+				else
+				{
+					this.hasNPCActed = true;
+					return;
+				}
+			}
+		}
+	}
+};
+
+gs.abilityTypes.Disengage.useOn = function (actingChar, targetTileIndex) {
+	let prevTileIndex = {x: actingChar.tileIndex.x, y: actingChar.tileIndex.y};
+	let toTileIndex = this.getBackIndex(actingChar, targetTileIndex);
+	
+	// Back Peddle:
+	// Perform the back peddle first:
+	// Blinking enemies will not blink into the tile
+	// Wont take damage from explosions
+	if (gs.isPassable(toTileIndex)) {
+		actingChar.isMultiMoving = true;
+		actingChar.body.moveToTileIndex(toTileIndex);
+		actingChar.body.faceTileIndex(targetTileIndex);
+	}
+	
+	// Attributes:
+	let damage = Math.ceil(actingChar.weaponDamage() * this.attributes.meleeDamageMultiplier.value(actingChar));
+
+	
+	// Melee Attack:
+	let targetChar = gs.getChar(targetTileIndex);
+	let weapon = actingChar.inventory.getPrimaryWeapon();
+	
+	// Note we need to consider the player on his prevTileIndex for weapons to hit correctly
+	actingChar.tileIndex = prevTileIndex;
+	weapon.type.attackEffect.useOn(targetTileIndex, weapon, {damage: damage});
+	actingChar.tileIndex = toTileIndex;
+	
+	// No speed point cost on kill strike:
+	if (targetChar && !targetChar.isAlive && actingChar.talents.getTalentRank('Disengage') === 2) {
+		gs.pc.gainSpeed(1);
+	}
+	
+	// Shake Screen:
+	game.camera.shake(0.010, 100);
+
+	// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+	if (util.frac() < 0.05)
+	{
+		actingChar.popUpText('Nat 1 SP Fail', 'Purple');
+		gs.endTurn(actingChar.moveTime());
+	}
+};
+
+PlayerCharacter.prototype.dashAttackChooseAction = function () {
+	let click = this.actionQueue.pop();
+	let tileIndex = click.tileIndex;
+	let char = gs.getChar(tileIndex);
+
+	// Consume a speed point:
+	this.currentSp -= 1;
+
+	// If there is a char we need to melee attack him:
+	if (char && char !== this) {
+		/*
+		// Attack w/ weapon:
+		let weapon = this.inventory.getPrimaryWeapon();
+		let meleeDamageMultiplier = gs.abilityTypes.DashAttack.attributes.meleeDamageMultiplier.value(gs.pc);
+		let attackFlags = {
+			damage: this.weaponDamage() * meleeDamageMultiplier,
+			noKnockBack: true,
+		};
+		
+		weapon.type.attackEffect.useOn(tileIndex, weapon, attackFlags);
+		*/
+		
+		// Attack w/ weapon:
+		let weapon = this.inventory.getPrimaryWeapon();
+		let meleeDamageMultiplier = gs.abilityTypes.DashAttack.attributes.meleeDamageMultiplier.value(gs.pc);
+		let attackFlags = {
+			damage: this.weaponDamage() * meleeDamageMultiplier,
+			noKnockBack: true,
+		};
+		
+		// We use the standard melee attack to prevent spears and axes from multi-hitting:
+		gs.weaponEffects.Melee.useOn(tileIndex, weapon, attackFlags);
+	}
+
+	// If there is a char here we need to temporariliy remove him from the tile:
+	if (char && char.isAlive) {
+		gs.getTile(tileIndex).character = null;
+	}
+
+	// Now we move the player:
+	this.moveTo(tileIndex, click.focusCamera, false);
+
+	// We place the char back:
+	if (char && char.isAlive && util.vectorEqual(char.tileIndex, tileIndex)) {
+		gs.getTile(tileIndex).character = char;
+	}
+
+	// Recover speed points:
+	if (this.talents.getTalentRank('DashAttack') === 2 && char && !char.isAlive) {
+		gs.pc.gainSpeed(1);
+	}
+
+	// Last move:
+	if (this.actionQueue.length === 0) {
+		this.statusEffects.remove('DashAttack');
+
+		// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+		if (util.frac() < 0.05)
+		{
+			actingChar.popUpText('Nat 1 SP Fail', 'Purple');
+			gs.endTurn(actingChar.moveTime());
+		}
+	}
+};
+
+gs.weaponEffects.Melee.useOn = function (tileIndex, item, flags = {}) {
+	let targetChar = gs.getChar(tileIndex),
+		isLunge = false;
+	
+	// Damage:
+	let damage = flags.damage || gs.pc.weaponDamage(item);
+	
+	// Knock Back:
+	if (item.type.knockBack && util.frac() < 0.25) {
+		flags.knockBack = 1;
+	}
+	
+	// No Mitigation:
+	if (item.type.noMitigation) {
+		flags.noMitigation = true;
+	}
+	
+	// Proc Effect:
+	if (item.type.procEffect) {
+		flags.procEffect = item.type.procEffect;
+	}
+	
+	// Move to attack:
+	if (this.canLunge() && util.distance(gs.pc.tileIndex, tileIndex) > 1.5) {
+		damage = damage * gs.pc.lungeDamageMultiplier;
+		// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+		if (util.frac() < 0.05)
+		{
+			gs.pc.popUpText('Nat 1 SP Fail', 'Purple');
+		}
+		else
+		{
+			gs.pc.isMultiMoving = true;
+		}
+		gs.pc.body.moveToTileIndex(this.getStepIndex(tileIndex));
+		gs.pc.currentSp -= 1;
+		isLunge = true;
+	}
+	
+	// Melee Attack:
+	gs.meleeAttack(gs.pc, tileIndex, this, damage, flags);
+	
+	// Play Sound:
+	gs.playSound(gs.sounds.melee, gs.pc.tileIndex);
+	
+	// Recover Lunge Points:
+	if (isLunge && targetChar && !targetChar.isAlive && gs.pc.talents.getTalentRank('Lunge') === 2) {
+		gs.pc.gainSpeed(1);
+	}
+};
+
+gs.weaponEffects.PoleArm.useOn = function (tileIndex, item, flags = {}) {
+	let targetChar = gs.getChar(tileIndex),
+		isLunge = false;
+	
+	// Damage:
+	let damage = flags.damage || gs.pc.weaponDamage(item);
+	
+	// Weapon Knock Back:
+	if (item.type.knockBack && util.frac() < 0.25) {
+		flags.knockBack = 1;
+	}
+	
+	// Proc Effect:
+	if (item.type.procEffect) {
+		flags.procEffect = item.type.procEffect;
+	}
+	
+	// Move to attack:
+	if (this.canLunge() && gs.isPassable(this.getStepIndex(tileIndex)) && util.distance(gs.pc.tileIndex, tileIndex) > 2.0) {
+		damage = damage * gs.pc.lungeDamageMultiplier;
+		// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+		if (util.frac() < 0.05)
+		{
+			gs.pc.popUpText('Nat 1 SP Fail', 'Purple');
+		}
+		else
+		{
+			gs.pc.isMultiMoving = true;
+		}
+		gs.pc.body.moveToTileIndex(this.getStepIndex(tileIndex));
+		gs.pc.currentSp -= 1;
+		isLunge = true;
+	}
+	
+	// Polearm Attack:
+	this.getTargetList(tileIndex).forEach(function (index) {
+		gs.meleeAttack(gs.pc, index, this, damage, flags);
+	}, this);
+	
+	// Play Sound:
+	gs.playSound(gs.sounds.melee, gs.pc.tileIndex);
+	
+	// Recover Lunge Points:
+	if (isLunge && targetChar && !targetChar.isAlive && gs.pc.talents.getTalentRank('Lunge') === 2) {
+		gs.pc.gainSpeed(1);
+	}
+};
+
+gs.weaponEffects.Cleave.useOn = function (tileIndex, item, flags = {}) {
+	let targetChar = gs.getChar(tileIndex),
+		isLunge = false;
+
+	// Damage:
+	let damage = flags.damage || gs.pc.weaponDamage(item);
+
+	// Proc Effect:
+	if (item.type.procEffect) {
+		flags.procEffect = item.type.procEffect;
+	}
+
+	// Move to attack:
+	if (this.canLunge() && util.distance(gs.pc.tileIndex, tileIndex) > 1.5) {
+		damage = damage * gs.pc.lungeDamageMultiplier;
+		// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+		if (util.frac() < 0.05)
+		{
+			gs.pc.popUpText('Nat 1 SP Fail', 'Purple');
+		}
+		else
+		{
+			gs.pc.isMultiMoving = true;
+		}
+		gs.pc.body.moveToTileIndex(this.getStepIndex(tileIndex));
+		gs.pc.currentSp -= 1;
+		isLunge = true;
+	}
+
+	// Cleave Hit:
+	this.getTargetList(tileIndex).forEach(function (index) {
+		gs.meleeAttack(gs.pc, index, this, damage, flags);
+	}, this);
+
+	// Sound:
+	gs.playSound(gs.sounds.melee, gs.pc.tileIndex);
+
+	// Recover Lunge Points:
+	if (isLunge && targetChar && !targetChar.isAlive && gs.pc.talents.getTalentRank('Lunge') === 2) {
+		gs.pc.gainSpeed(1);
+	}
+
+};
+
+gs.weaponEffects.Crush.useOn = function (tileIndex, item, flags = {}) {
+	let targetChar = gs.getChar(tileIndex),
+		isLunge = false;
+	
+	// Damage:
+	let damage = flags.damage || gs.pc.weaponDamage(item);
+	
+	// Move to attack:
+	if (this.canLunge() && util.distance(gs.pc.tileIndex, tileIndex) > 1.5) {
+		damage = damage * gs.pc.lungeDamageMultiplier;
+		// 3) When the player spends SP to get a free move, there is a 5% chance it is not free.
+		if (util.frac() < 0.05)
+		{
+			gs.pc.popUpText('Nat 1 SP Fail', 'Purple');
+		}
+		else
+		{
+			gs.pc.isMultiMoving = true;
+		}
+		gs.pc.body.moveToTileIndex(this.getStepIndex(tileIndex));
+		gs.pc.currentSp -= 1;
+		isLunge = true;
+	}
+	
+	// Crush Effect:
+	let normal = util.get8WayVector(gs.pc.tileIndex, tileIndex);
+	if (!gs.isStaticPassable(tileIndex.x + normal.x, tileIndex.y + normal.y)) {
+		flags.isCrit = true;
+	}
+		
+	// Proc Effect:
+	if (item.type.procEffect) {
+		flags.procEffect = item.type.procEffect;
+	}
+	
+	// Melee Attack:
+	gs.meleeAttack(gs.pc, tileIndex, this, damage, flags);
+	
+	// Play Sound:
+	gs.playSound(gs.sounds.melee, gs.pc.tileIndex);
+	
+	// Recover Lunge Points:
+	if (isLunge && targetChar && !targetChar.isAlive && gs.pc.talents.getTalentRank('Lunge') === 2) {
+		gs.pc.gainSpeed(1);
+	}
+};
+//END//
+
