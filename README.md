@@ -1,5 +1,7 @@
 # Rogue-Fable-III-Mods
 
+This repository intends to collect all mods that are made for the game Rogue Fable III.
+
 How to install Mods:
   Mods in zip folders:
     1.  extract the zip folder
