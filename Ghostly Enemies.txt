@@ -1,0 +1,13 @@
+// Ghostly Enemies - Challenge
+// All npcs will pass through walls and will be able to attack out of them
+
+for (let i=0; i<gs.npcTypeList.length; i +=1){
+	gs.npcTypeList[i].phaseWalls = true;
+};
+gs.npcTypeList.forEach(function(npc){
+ npc.abilityTypes.forEach(function(ability){
+  ability.canUseOn = function kg1(x, a){
+   return true;
+  }
+ });
+});
