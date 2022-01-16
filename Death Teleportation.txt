@@ -1,0 +1,236 @@
+// **********************************************************************  //
+// 			 Death Teleportation					//
+//  	Whenever an NPC dies the player is teleported to the spot where it died		//
+// **********************************************************************  //
+
+Character.prototype.takeDamage = function (amount, damageType, flags = {}) {
+	var isCrit = false,
+		critMultiplier;
+	
+	this.updateStats();
+	
+	if (this === gs.pc) {
+		critMultiplier = CRIT_MULTIPLIER;
+	}
+	else {
+		critMultiplier = gs.pc.critMultiplier;
+	}
+	
+	if (this.isDamageImmune || !this.isAlive) {
+		return 0;
+	}
+	
+	// Discord Damage Multiplier:
+	if (this.damageMultiplier && !flags.isTorment) {
+		amount = Math.ceil(amount * this.damageMultiplier);
+	}
+	
+	// Unaware Crit (sneak attack):
+	if (flags.killer === gs.pc && this !== gs.pc && (!this.isAgroed || this.isAsleep) && this.faction === FACTION.HOSTILE) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+    // Reduce fire damage when wet:
+	if (damageType === DAMAGE_TYPE.FIRE && this.isWet) {
+		amount = Math.ceil(amount * 0.25);
+		flags.neverCrit = true;
+	}
+	
+	// Flammable Crit:
+	if (damageType === DAMAGE_TYPE.FIRE && this.isFlammable) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+	// Wet Shock:
+    if (damageType === DAMAGE_TYPE.SHOCK && this.isWet) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+    }
+    
+	// Unstable Crit:
+	if (damageType === DAMAGE_TYPE.PHYSICAL && this.isUnstable) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+	// Any attacker can force a crit hit:
+	if (flags.isCrit) {
+		amount = Math.round(amount * critMultiplier);
+		isCrit = true;
+	}
+	
+	// DAMAGE_TYPE.NONE: always max damage
+	if (damageType === DAMAGE_TYPE.NONE) {
+		// None damage type is always max damage
+	}
+	// 0.5 - 1.0 Random Damage
+	else {
+		amount = Math.floor(amount * 0.50) + util.randInt(1, Math.ceil(amount * 0.50));
+	}
+	
+    // Defense mitigates damage:
+	if (!flags.noMitigation) {
+		amount = this.mitigateDamage(amount, damageType);
+	}
+	
+	// Killing Strikes:
+	let isKillingStrike = flags.killer === gs.pc
+		&& gs.pc.talents.getTalentRank('KillingStrikes') > 0
+		&& damageType === DAMAGE_TYPE.PHYSICAL
+		&& flags.attackType !== 'DamageShield'
+		&& this.currentHp / this.maxHp <= gs.talents.KillingStrikes.attributes.hpPercent[gs.pc.talents.getTalentRank('KillingStrikes')];
+	
+	// Pop Up Text:
+	if (isKillingStrike) {
+		this.popUpText('Kill Strike!', 'Red');
+		amount = this.currentHp;
+	}
+	// Crit:
+	else if (isCrit) {
+		this.popUpText('Crt ' + amount, 'Red');
+	}
+	// Damage Shield:
+	else if (flags.attackType === 'DamageShield') {
+		this.popUpText('DS ' + amount, 'Red');
+	}
+	// Damage:
+	else {
+		this.popUpText(amount, 'Red');
+	}
+	
+	// Achievements:
+	if (this === gs.pc && amount >= 100) {
+		achievements.get('STONE_WALL');
+	}
+	if (this !== gs.pc && amount >= 100 && flags.killer === gs.pc) {
+		achievements.get('ONE_PUNCH');
+	}
+
+
+    // Cap damage to currentHp (for lifetaps):
+	let cappedAmount = Math.min(amount, this.currentHp);
+
+    // Apply damage:
+	if (!(this === gs.pc && gs.debugProperties.disableDamage)) {
+		// Spirit Shield:
+		if (this.hasSpiritShield) {
+			let mp = Math.min(this.currentMp, Math.floor(amount / 2));
+			this.currentMp -= mp;
+			amount -= mp;
+		}
+		
+		// Shield of Ice:
+		if (this.statusEffects.has('ShieldOfIce') && !util.inArray(flags.killer, ['Poison', 'Hunger', 'Cannibalise'])) {
+			if (amount > this.statusEffects.get('ShieldOfIce').duration) {
+				amount -= this.statusEffects.get('ShieldOfIce').duration;
+				this.statusEffects.remove('ShieldOfIce');
+			}
+			else {
+				this.statusEffects.get('ShieldOfIce').duration -= amount;
+				amount = 0;
+			}
+		}
+		
+		if (gs.pc.race.name == "Starborn" && this === gs.pc) {
+			this.currentHp -= amount;
+			this.currentMp -= amount;
+			if (this.currentMp < 0) {
+				this.currentMp = 0;
+			}
+		} else {
+			this.currentHp -= amount;
+		}
+	}
+	
+    // Hit Sound:
+	if (this.currentHp > 0) {
+		if (isCrit) {
+			gs.playSound(gs.sounds.playerHit, this.tileIndex);
+			//gs.playSound(gs.sounds.death, this.tileIndex);
+		}
+		else {
+			gs.playSound(gs.sounds.playerHit, this.tileIndex);
+		}
+	}
+	
+    // Death:
+	if (this.currentHp <= 0) {
+		if (flags.killer && flags.killer.onKill) {
+			if (this === gs.pc) {
+				if (this.race.name !== "Starborn") {
+					flags.killer.onKill(this);
+				} else {
+					if (this.currentMp <= 0) {
+						flags.killer.onKill(this);
+					} else {
+						this.currentHp = 1;
+					}
+				}
+			} else {
+				this.death(damageType, flags);
+			}	
+		} else if (this !== gs.pc && this.alive) {
+			gs.pc.onKill(this);
+		} else if (this === gs.pc) {
+			if (this.race.name !== "Starborn") {
+				this.death(damageType, flags);
+			} else {
+				if (this.currentMp <= 0) {
+					this.death(damageType, flags);
+				} else {
+					this.currentHp = 1;
+				}
+			}
+		 } else {		
+			this.death(damageType, flags);
+		}	
+		if (this !== gs.pc) {
+			gs.pc.moveTo({x: this.tileIndex.x, y: this.tileIndex.y}, true, false);	
+		}
+	}
+	
+	// Blood splatter:
+	if (isCrit && this.isAlive && !this.type.noBlood && util.frac() < 0.25) {
+		this.bloodSplatter();
+	}
+    
+	// Slime Race:
+	if (this.slime == 1 && amount > 0 && !util.inArray(flags.killer, ['Poison', 'Hunger', 'Cannibalise'])) {
+		let indexList;
+
+		// First attempting to find safe spawn:
+		indexList = gs.getIndexListInRadius(this.tileIndex, 2);
+		indexList = indexList.filter(index => gs.isPassable(index));
+		indexList = indexList.filter(index => gs.isIndexSafeForCharType(index, "Slime"));
+		
+		// No safe spawn so we default to unsafe spawn:
+		if (indexList.length === 0) {
+			indexList = gs.getIndexListInRadius(this.tileIndex, 2);
+			indexList = indexList.filter(index => gs.isPassable(index));
+		}
+
+		if (indexList.length > 0) {
+			let npc = gs.createNPC(indexList[0], "Slime");
+			npc.level = this.level;
+			npc.isAgroed = true;
+			npc.waitTime = 100;
+			npc.faction = this.faction;
+			npc.currentHp = amount;
+			if (npc.currentHp > npc.maxHp) {
+				npc.currentHp == npc.MaxHp;
+			}
+		}
+	}
+
+    this.onTakeDamage(flags);
+	this.statusEffects.onTakeDamage(damageType, amount, flags);
+	
+	// Remove ambient cold:
+	if (damageType === DAMAGE_TYPE.FIRE) {
+		this.coldLevel = 0;
+	}
+
+	return cappedAmount;
+};
