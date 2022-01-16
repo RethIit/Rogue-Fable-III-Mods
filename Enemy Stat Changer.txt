@@ -1,0 +1,44 @@
+// **********************************************************************************************************************************
+// Enemy Stat changer
+// Good luck
+
+					//Modify these variables to get your wanted enemy amount/damage/health
+var EnemyMultiplier = 1;
+var DamageMultiplier = 1;
+var HealthMultiplier = 1;
+var EnemyScaling = 1;
+
+					//Increases Enemy amount
+MonsterSpawner.totalExp = function () { let totalMonsters = gs.zoneType().zoneTier.numNPCs[gs.zoneLevel], zoneDL = gs.dangerLevel(); return totalMonsters * (10 + zoneDL)*EnemyMultiplier; };
+
+					//Reduces Enemy EXP (if necissary)
+NPC.prototype.killedExp = function () {
+    let exp = this.exp / EnemyMultiplier;
+
+    // Handle granting exp for a spawners unspawned NPCs:
+    let ability = this.abilities.getAbility('SpawnNPC');
+    if (ability) {
+        exp += this.currentMp * ability.type.numSpawned * gs.npcTypes[ability.type.npcTypeName].exp * EnemyMultiplier ;
+    }
+
+    // Summoned creatures give no exp:
+    if (this.summonerId) {
+        exp = 0;
+    }
+
+    return exp;
+};
+
+					//Increases Damage:
+NPC_INITIAL_DAMAGE={LOW: 2*DamageMultiplier, MLOW: 3*DamageMultiplier, MEDIUM: 4*DamageMultiplier, MHIGH: 6*DamageMultiplier, HIGH: 8*DamageMultiplier};
+
+					//Increases Hp:
+NPC_INITIAL_HP= {LOW: 8*HealthMultiplier, MLOW: 12*HealthMultiplier, MEDIUM: 16*HealthMultiplier, MHIGH: 20*HealthMultiplier, HIGH: 24*HealthMultiplier};
+
+					//Increases Hp/Dmg per level:
+NPC_DAMAGE_PER_LEVEL = {LOW: 0.3333333333333333*EnemyScaling, MLOW: 0.5*EnemyScaling, MEDIUM: 0.6666666666666666*EnemyScaling, MHIGH: 1*EnemyScaling, HIGH: 1.3333333333333333*EnemyScaling};
+NPC_HP_PER_LEVEL = {LOW: 1.3333333333333333*EnemyScaling, MLOW: 2*EnemyScaling, MEDIUM: 2.6666666666666665*EnemyScaling, MHIGH: 3.3333333333333335*EnemyScaling, HIGH: 4*EnemyScaling};
+					
+					//Yendor:
+var YendorHP = HealthMultiplier * EnemyScaling;
+YENDOR_MAX_HP = [200 * YendorHP, 300 * YendorHP, 400 * YendorHP];
