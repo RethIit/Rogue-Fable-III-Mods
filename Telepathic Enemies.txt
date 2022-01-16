@@ -1,0 +1,10 @@
+//Telepathic Enemies - Challenge
+//Enemies always know where you are.
+
+SLEEPING_PERCENT=0;
+for (let i=0; i<gs.npcTypeList.length; i +=1){
+	gs.npcTypeList[i].alwaysAgroed = true;
+	gs.npcTypeList[i].startHidden= false;
+}
+
+//Yep, that's it.
