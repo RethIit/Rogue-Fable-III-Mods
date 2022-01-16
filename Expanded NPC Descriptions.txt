@@ -1,0 +1,151 @@
+// Expanded NPC Descriptions
+// Adds a cooldown (the [] one is the one the npc gets when they use it) and range of the ability part to the descriptions
+// Makes NPC speed also be shown in their descriptions
+
+NPC.prototype.getDesc = function () {
+	var desc = {title: '', text: ''};
+	
+	// Name:
+	if (this.npcClassType) {
+		desc.title += this.npcClassType.name + ' ' + this.type.niceName;
+	}
+	else {
+		desc.title += this.type.niceName;
+	}
+	
+	// Hidden Title:
+	if (this.isHidden) {
+		desc.title += ' (Hidden)';
+	}
+	
+	
+	// Early Return for Pots:
+	if (this.name === 'FirePot' || this.name === 'GasPot') {
+		desc.text += 'Damage: ' + gs.getTrapDamage(this.name) + '\n\n';
+		
+		desc.text += 'Hold [Z] key to attack.';
+		
+		return desc;
+	}
+	
+	// Early return for neutral enemies like merchants, crates, etc.
+	if (this.faction === FACTION.NEUTRAL || this.faction === FACTION.DESTRUCTABLE || this.type.hideInterface) {
+		if (this.burstDamage) {
+			desc.text = 'Damage: ' + this.burstDamage;
+		}
+		return desc;
+	}
+	
+	// Early Return for Goblet Shield:
+	if (this.name === 'GobletShield') {
+		desc.text = 'HP: ' + this.currentHp + '/' + this.maxHp + '\n';
+		return desc;
+	}
+	
+	// Early Return for Inferno Orb:
+	if (this.name === 'SpectralOrb') {
+		desc.text = 'Damage: ' + this.burstDamage + '\n';
+		desc.text += 'Duration: ' + this.summonDuration;
+		return desc;
+	}
+	
+	// Early Return for Fire Ball:
+	if (this.name === 'HomingFireOrb') {
+		desc.text = 'HP: ' + this.currentHp + '/' + this.maxHp + '\n';
+		desc.text += 'Damage: ' + this.burstDamage;
+		return desc;
+	}
+	
+	// Set level color:
+	if (this.level < gs.pc.level - 2) {
+		desc.font = 'PixelFont6-Green';
+	}
+	else if (this.level < gs.pc.level) {
+		desc.font = 'PixelFont6-Blue';
+	}
+	else if (this.level > gs.pc.level + 2) {
+		desc.font = 'PixelFont6-Red';
+	}
+	else if (this.level > gs.pc.level) {
+		desc.font = 'PixelFont6-Yellow';
+	}
+	else {
+		desc.font = null;
+	}
+	
+	// Level:
+	desc.text += 'Level: ' + this.level + '\n';
+	
+	// HP:
+	desc.text += 'HP: ' + this.currentHp + '/' + this.maxHp + '\n';
+	
+	// size:
+	desc.text += 'Size: ' + ['SMALL', 'MEDIUM', 'LARGE'][this.size] + '\n';
+
+	// speed:
+	desc.text += 'Speed: ';
+	if (this.movementSpeed !== 'NaN') {
+		desc.text += ['SLOW', 'MEDIUM', 'FAST'][this.movementSpeed]  + "\n";
+	} else {
+		desc.text += "Immobile \n";
+	}
+
+	// Defense:
+	DAMAGE_TYPES.forEach(function (type) {
+		if (this.resistance[type] > 0) {
+			desc.text += type + ' Resistant\n';
+		}
+		else if (this.resistance[type] < 0) {
+			desc.text += 'Vulnerable to ' + type + '\n';
+		}
+	}, this);
+	
+	// Armored:
+	if (this.protection > 0) {
+		desc.text += 'Protection: ' + this.protection + '\n';
+	}
+	
+	// Reflective:
+	if (this.reflection > 0) {
+		desc.text += 'Reflective\n';
+	}
+	
+	// DAMAGE_SHIELD:
+	DAMAGE_TYPES.forEach(function (damageType) {
+		if (this.damageShield[damageType] > 0) {
+			desc.text += damageType + ' Damage Shield: ' + this.damageShield[damageType] + '\n';
+		}
+	}, this);
+	
+	// ABILITIES:
+	this.abilities.list.forEach(function (ability) {
+		if (ability) {
+			let str = '';
+				
+			// Ability has a specific toShortDesc function:
+			if (ability.type.toShortDesc) {
+				str += ability.type.toShortDesc(this);
+			}
+			// Generic Desc:
+			else {
+				str += '*' + ability.type.niceName;
+
+				if (ability.type.attributes && ability.type.attributes.damage) {
+					str += ': ' + ability.type.attributes.damage.value(this) + ' DMG'
+				}
+			}
+		
+			str += ' ' + ability["coolDown"] + "[" + ability.type["coolDown"] + "]" + ' CD';
+			str += ' ' + ability.type["range"]() + ' RNG';
+
+			desc.text += str + '\n';
+		}
+	}, this);
+	
+	// Reflective:
+	if (this.type.isCorrosive) {
+		desc.text += '\nDegrades the enchantment of melee weapons when attacked.\n';
+	}
+	
+	return desc;
+};
