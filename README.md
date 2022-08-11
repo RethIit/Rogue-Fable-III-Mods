@@ -23,7 +23,7 @@ List of zip mods and what they do:
 
 Chronomancy and Terror mod:
   Adds the time mage and dread knight classes to the game.  
-Extra Items Mod V 1.0:
+Extra Items Mod:
   Adds the GreatSword, DualSwords, WarFlail, BallockDagger, WarPick, Whip, Plumbata, Sling, StaffOfTime, StaffOfWater, GreaterStaffOfTime, GreaterStaffOfWater, 
   TimeForgedStaff, ToxinForgedStaff, EversmokingRing, RingOfGold, RingOfRage, CrownOfThorns, BerserkerHelmet, ShacklesOfWar, BerserkerGloves, CursedArmor,
   BerserkerArmor, SandalsOfTheSaint, BerserkerBoots, OrbOfPower, CharmOfMight, BottledStorm, BottledFlame, BottledRegeneration and SlimeVial to the game.
