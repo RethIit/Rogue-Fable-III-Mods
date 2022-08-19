@@ -101,7 +101,7 @@ gs.reloadLevel = function (zoneName, zoneLevel) {
 
 	if (gs.characterList.filter(char => char.name === "MarkIIClockworkWarrior").length===0){
 			if (gs.isInBounds({x: gs.pc.tileIndex.x +1, y: gs.pc.tileIndex.y}) && gs.getTile({x: gs.pc.tileIndex.x +1, y: gs.pc.tileIndex.y}).character === null){
-			debug.createNPC('Ghost');
+			debug.createNPC("MarkIIClockworkWarrior");
 		} else {
 			console.log('Creating NPC: MarkIIClockworkWarrior');
 			gs.createNPC({x: 1, y: 1}, "MarkIIClockworkWarrior");
