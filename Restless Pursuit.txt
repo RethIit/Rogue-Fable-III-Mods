@@ -1,0 +1,110 @@
+//Restless Pursuit - Challenge
+//An invincible ghost that chases you through the entire game, even phasing through walls to do it.
+
+					//Changes the "ghost" enemy to be suitable for this
+
+let ghost = gs.npcTypeList.filter(type => type.name == "MarkIIClockworkWarrior")[0];
+ghost.movementSpeed=0;
+ghost.isDamageImmune=true;
+ghost.isDominateImmune=true;
+ghost.isFlying=true;
+ghost.hitPointType='HIGH';
+ghost.alwaysAgroed = true;
+ghost.phaseWalls = true;
+ghost.frame = 827;
+ghost.niceName = "Ghosty the Poltergeist";
+
+					//Makes the Ghost enemy spawn on level generation
+gs.generateLevel = function () {
+	var success = false, attempt = 0;
+	
+	while (!success) {
+		success = true;
+		
+		// Seed Generator:
+		// Note we must add the attempt in order to not just keep regening same seed
+		if (this.seed) {
+			util.seedRand([this.seed, this.zoneName, this.zoneLevel, attempt]);
+		}
+		
+		// During debug we can throw LEVEL_GENERATION exceptions that would normally result in a re-gen
+		if (gs.debugProperties.throwAllExceptions) {
+			this.generateLevelFunc();
+		}
+		// During live version:
+		else {
+			try {
+				this.generateLevelFunc();
+			}
+			catch (e) {
+				// Rethrow non-level-gen exceptions:
+				if (e.type !== EXCEPTION_TYPE.LEVEL_GENERATION && e.type !== EXCEPTION_TYPE.AREA_GENERATION) {
+					throw e;
+				}
+				// Else we simply log the message and re-gen
+				else {
+					success = false;
+					
+					if (gs.debugProperties.logLevelGenExceptions) {
+						console.log('Failed to generate ' + gs.zoneName + ':' + gs.zoneLevel + ' attempting again');
+						console.log(e);
+					}
+					
+					
+					gs.destroyLevel();
+					attempt += 1;
+				}
+			}
+		}
+		
+		if (attempt > 40) {
+			throw 'Failed to generate ' + gs.zoneName + ':' + gs.zoneLevel + ' after 40 attemps.';
+		}
+	}
+	if (gs.isInBounds({x: gs.pc.tileIndex.x +1, y: gs.pc.tileIndex.y}) && gs.getTile({x: gs.pc.tileIndex.x +1, y: gs.pc.tileIndex.y}).character === null){
+		debug.createNPC("MarkIIClockworkWarrior");
+	} else {
+			console.log('Creating NPC: MarkIIClockworkWarrior');
+			gs.createNPC({x: 1, y: 1}, "MarkIIClockworkWarrior");
+	}
+};
+
+
+					//Creates a Ghost if you left it in another level by using stairs
+gs.reloadLevel = function (zoneName, zoneLevel) {
+    let data = util.readFile(zoneName + zoneLevel);
+	
+	this.numTilesX = data.numTilesX;
+	this.numTilesY = data.numTilesY;
+	levelController.loadData(data.levelController);
+
+	// Create tile map:
+	this.initiateTileMap();
+	this.placeTileTypeMap({x: 0, y: 0}, data.tileMap);
+	
+    // load NPCs:
+    for (let i = 0; i < data.npcs.length; i += 1) {
+		this.loadNPC(data.npcs[i]);		
+    }
+    
+	// Load Clouds:
+	for (let i = 0; i < data.clouds.length; i += 1) {
+		this.loadCloud(data.clouds[i]);
+	}
+	
+    // Load Items:
+    for (let i = 0; i < data.items.length; i += 1) {
+		this.loadFloorItem(data.items[i]);
+    }
+	
+	this.lastTurn = data.lastTurn;
+
+	if (gs.characterList.filter(char => char.name === "MarkIIClockworkWarrior").length===0){
+			if (gs.isInBounds({x: gs.pc.tileIndex.x +1, y: gs.pc.tileIndex.y}) && gs.getTile({x: gs.pc.tileIndex.x +1, y: gs.pc.tileIndex.y}).character === null){
+			debug.createNPC('Ghost');
+		} else {
+			console.log('Creating NPC: MarkIIClockworkWarrior');
+			gs.createNPC({x: 1, y: 1}, "MarkIIClockworkWarrior");
+		}
+	}
+};
