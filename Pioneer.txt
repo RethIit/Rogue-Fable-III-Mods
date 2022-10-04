@@ -1,0 +1,45 @@
+// Pioneer - Challenge
+// Whenever you step on a tile the one you stepped from gets covered with a tile of void.
+// Void instantly kills the player if stepped in, but ignores NPCs
+
+gs.cloudTypes.void = {};
+gs.cloudTypes.void.isConfuctive = true;
+gs.cloudTypes.void.isDangerous = true;
+gs.cloudTypes.void.isPassable = true;
+gs.cloudTypes.void.alpha = 0.6
+gs.cloudTypes.void.isTransparent = true;
+gs.cloudTypes.void.frame = 1163;
+gs.cloudTypes.void.niceName = "Void";
+gs.cloudTypes.void.name = "Void";
+gs.cloudTypes.void.onCreate = function () {};
+gs.cloudTypes.void.characterTurnEffect = function (character) {
+		if (character == gs.pc) {
+			character.takeDamage(this.damage, 'None', {killer: 'Void'});
+		}
+	};
+PlayerCharacter.prototype.moveTo = function (tileIndex, focusCamera, endTurn = true) {
+	var prevTileIndex = {x: this.tileIndex.x, y: this.tileIndex.y};
+	
+	let obj = gs.getObj(prevTileIndex);
+	if (!(obj && (obj.type.name == "DownStairs" || obj.type.name == "UpStairs"))) {
+		gs.createCloud(prevTileIndex, "void", 999, 9999);
+	}
+
+	// Halt exploration:
+	if (this.isExploring && !gs.isIndexSafe(tileIndex, this)) {
+		this.stopExploring();
+		return;
+	}
+	
+	// Swap places:
+	if (this.canSwapWith(tileIndex)) {
+		gs.getChar(tileIndex).body.moveToTileIndex(this.tileIndex);
+	}
+		
+	this.moveAttackPrevIndex = {x: this.tileIndex.x, y: this.tileIndex.y};
+	this.body.moveToTileIndex(tileIndex, focusCamera);
+		
+	if (endTurn && (!this.isMultiMoving || this.actionQueue.length === 0) && !this.statusEffects.has('Charge')) {
+		this.endTurn(this.moveTime());	
+	}
+};
