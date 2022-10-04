@@ -1,0 +1,114 @@
+//Vampire - Challenge
+//You gain food by killing enemies
+//More Starvation Damage.
+//Hunger buff while starving (Haste + Berserk + psychic, duration increased by 2 every time something dies).
+
+							//Changing basic food values
+PC_BASE_MAX_FOOD=30;
+FOOD_TIME=8;
+
+							//Creating the Bloodlust status effect
+gs.statusEffectTypes.lust = new StatusEffectType();
+gs.statusEffectTypes.lust.lightColor = '#ee0000';
+gs.statusEffectTypes.lust.lightAlpha = 'CC';
+gs.statusEffectTypes.lust.onCreate = function (character) {
+	this.timer = 0;
+};
+gs.statusEffectTypes.lust.onUpdateStats = function (character) {
+	character.meleeDamageMultiplier += 1;
+	character.movementSpeed += 1;
+	character.evasion += 0.1;
+	character.isTelepathic += 1;
+};
+gs.statusEffectTypes.lust.onKill = function (character) {
+	this.duration += 2;
+};
+gs.statusEffectTypes.lust.desc = 'You have been hasted and given stronger melee attacks by your thirst for blood';
+gs.statusEffectTypes.lust.duration = 2;
+gs.statusEffectTypes.lust.addDuration = true;
+gs.statusEffectTypes.lust.niceName= 'Hunger';
+
+							//Making starve damage stronger along with giving bloodlust while starved
+PlayerCharacter.prototype.updateTurnFood = function () {
+    // Mummy can skip:
+    if (this.race.name === 'Mummy') {
+        return;
+    }
+    
+    // Eat Food:
+    if (this.foodTimer >= this.foodTime()) {
+        this.foodTimer = 0;
+        if (this.currentFood > 0) {
+            this.currentFood -= 1;
+        }
+    } 
+    else {
+        this.foodTimer += 1;
+    }
+    
+    // Starving Damage:
+  if (this.currentFood === 0) {
+        this.takeDamage(1, 'None', {killer: 'Hunger', neverCrit: true});
+        this.statusEffects.add('lust', {duration: 1});
+    }
+    // Hungry Message:
+    if (this.currentFood <= 3 && this.foodTextTimer >= 10) {
+        this.foodTextTimer = 0;
+        this.popUpText('HUNGRY',  'Red');
+    } 
+    // Very Hungry Message:
+    else if (this.currentFood <= 1 && this.foodTextTimer >= 10) {
+        this.popUpText('VERY HUNGRY', 'Red');
+        this.foodTextTimer = 0;
+    } 
+    // Tick food text timer:
+    else if (this.foodTextTimer < 10) {
+        this.foodTextTimer += 1;
+    }
+};
+							//Makes enemies increase your currentFood when they die
+NPC.prototype.dropLoot = function () {
+	var tileIndex;
+	
+	// Dominated enemies never drop their loot:
+	if (this.statusEffects.has('Domination') || this.statusEffects.has('ScrollOfDomination')) {
+		return;
+	}
+	
+	// Slime King will not drop loot if he's not the last one alive:
+	if (this.type.name === 'ExpanderisTheSlimeKing' && gs.characterList.filter(char => char.type.name === 'ExpanderisTheSlimeKing' && char.isAlive).length > 1) {
+		return;
+	}
+	
+	tileIndex = gs.getValidDropIndex(this.tileIndex);
+	gs.pc.currentFood +=1;
+
+	// Special logic for Vampire Bats in Crypt:4 The Vampire Lord
+	if (levelController.flags.isVampireLordLevel) {
+		let npcList = gs.characterList.filter(char => char.isAlive && char.type.name === 'VampireBat' && char.faction === FACTION.HOSTILE);
+		if (this.type.name === 'VampireBat' && this.faction === FACTION.HOSTILE && npcList.length === 1) {
+			gs.createFloorItem(tileIndex, Item.createItem('RingOfBlood'));
+		}
+	}
+	
+	
+	// Preset dropTable loot:
+	if (this.type.dropTable && tileIndex) {
+		let itemTypeName = util.chooseRandom(this.type.dropTable);
+		
+		if (itemTypeName) {
+			gs.createFloorItem(tileIndex, Item.createItem(itemTypeName));
+		}
+	}
+	// Dropping random loot:
+	else if (this.type.dropPercent && tileIndex) {
+		if (util.frac() <= this.type.dropPercent) {
+			if (util.frac() <= DROP_GOLD_PERCENT) {
+				gs.createFloorItem(tileIndex, Item.createItem('GoldCoin', {amount: util.randInt(Math.ceil(gs.dropGoldAmount() / 2), gs.dropGoldAmount())}));
+			} 
+			else {
+				gs.createRandomFloorItem(tileIndex);
+			}
+		}
+	}
+};
