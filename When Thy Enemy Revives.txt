@@ -1,0 +1,135 @@
+// When Thy Enemy Revives - Challenge
+// Any enemy that dies gets revived at a random tile on the floor.
+// Said enemy will no longer drop items (if it did before), be one level higher than before it died and give you no exp when killed.
+
+NPC.prototype.death = function (damageType, flags) {
+	var itemName, dropIndex;
+	flags = flags || {};	
+
+	// Drop Loot:
+	this.dropLoot();
+	
+	// Destroy:
+	this.destroy();
+	
+	// Random chance to shout upon death:
+	if (util.frac() < 0.5) {
+		this.shout();
+	}
+	
+	// Slime King will not give EXP unless he is last one alive:
+	if (this.type.name === 'ExpanderisTheSlimeKing' && gs.characterList.filter(char => char.type.name === 'ExpanderisTheSlimeKing' && char.isAlive).length > 0) {
+		// Pass
+	}
+	else {
+		gs.pc.gainExperience(this.killedExp());
+	}
+	
+
+	// Blood:
+	if (!gs.getObj(this.tileIndex) && !this.type.noBlood && !gs.isPit(this.tileIndex)) {
+		gs.createObject(this.tileIndex, this.type.bloodTypeName);
+	}
+	
+	// Rage:
+	if (gs.pc.maxRage > 0 && flags.killer === gs.pc) {
+		gs.pc.gainRage(1);
+	}
+	
+	// Poof my summoned mobs:
+	this.summonIDList.forEach(function (id) {
+		if (gs.getCharWithID(id)) {
+			if (gs.getCharWithID(id).type.name !== 'Tentacle') {
+				gs.getCharWithID(id).popUpText('Poof!');
+			}
+			
+			gs.getCharWithID(id).death();
+		}
+	});
+	
+	// Poof my summoned clouds:
+	this.cloudIDList.forEach(function (id) {
+		let cloud = gs.getCloudWithID(id);
+		if (cloud) {
+			gs.createPopUpTextAtTileIndex(cloud.tileIndex, 'Poof!');
+			cloud.destroy();
+		}
+	}, this);
+	
+	// Tell my summoner I'm dead:
+	if (this.summonerId && gs.getCharWithID(this.summonerId)) {
+		util.removeFromArray(this.id, gs.getCharWithID(this.summonerId).summonIDList);
+	}
+	
+	// Remove Charm:
+	if (gs.pc.statusEffects.has('NPCCharm') && gs.pc.statusEffects.get('NPCCharm').casterId === this.id) {
+		gs.pc.statusEffects.remove('NPCCharm');
+	}
+	
+	// Player status effects: charm, constrict, curses etc.
+	gs.pc.statusEffects.onNPCDeath();
+	
+	// Poof:
+	if (this.name !== 'GobletShield') {
+		gs.createParticlePoof(this.tileIndex);
+	}
+	
+	
+	// Sound:
+	gs.playSound(gs.sounds.death, this.tileIndex);
+	
+	// Shake:
+	if (this.name === 'GobletShield') {
+		game.camera.shake(0.005, 200);
+		game.camera.flash(0xffffff, 30);
+	}
+	else {
+		game.camera.shake(0.005, 100);
+		game.camera.flash(0xffffff, 10);
+	}
+	
+	
+	// onDeath Func:
+	if (this.type.onDeath) {
+		this.type.onDeath.use(this);
+	}
+	
+	// Special Yendor Stuff:
+	if (this.type.niceName === 'The Wizard Yendor') {
+		this.yendorDeath();
+	}
+	
+	gs.HUD.miniMap.refresh();
+	
+	// Achievements:
+	if (flags.killer === gs.pc) {
+		gs.pc.numKills += 1;
+	}
+
+	// End turn:
+	if (gs.activeCharacter() === this) {
+		this.endTurn(ACTION_TIME);
+	}
+
+	if (!this.damageImmune && this.faction == FACTION.HOSTILE && this.name !== 'GobletShield') {
+		var indexList, safeIndexList, charType;
+
+		charType = this.type.name;
+
+		indexList = [];
+	
+		for (let i = 0; i < 40; i++) {
+			for (let j = 0; j < 40; j++) {
+				if (gs.isPassable(i, j) && gs.isIndexSafe({x: i, y: j}, this)) {
+					indexList[indexList.length] = {x: i, y: j};
+				}
+			}
+		}
+
+		if (indexList.length != 0){
+			let npc = gs.createNPC(indexList[util.randInt(0, indexList.length - 1)], charType, {level: this.level + 1, npcClassType: this.npcClassType});
+			npc["exp"] = 0;
+			npc.type.dropTable = undefined;
+		}
+	}
+};
