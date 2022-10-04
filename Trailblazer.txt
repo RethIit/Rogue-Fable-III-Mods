@@ -1,0 +1,82 @@
+//Trailblazer:
+// At the end of the turn on the tile on which you ended your last turn a flaming cloud spawns that deals a quarter of your max hp in damage and lasts 2 turns
+
+Character.prototype.createSharedProperties = function () {
+	this.isAlive = true;
+	this.state = 'WAITING';
+	
+	// Speed and Timing:
+	this.waitTime = 0; // The time the character must wait to take next turn
+	
+	// Attributes:
+	this.baseAttributes = {strength: 10, dexterity: 10, intelligence: 10};
+	this.maxAttributes = {strength: 10, dexterity: 10, intelligence: 10};
+	
+	
+	this.startTileIndex = {x: 0, y: 0};
+	
+	// Components:
+	this.abilities 		= new Abilities(this);
+	this.statusEffects 	= new StatusEffects(this);
+	this.body 			= new CharacterBody(this);
+	this.eventQueue 	= new CharacterEventQueue(this);
+	this.talents 		= new CharacterTalents(this);
+	
+	// Defense:
+	this.protection = 0;
+	this.resistance = {Fire: 0, Cold: 0, Shock: 0, Toxic: 0};
+	this.damageShield = {Fire: 0, Cold: 0, Shock: 0, Toxic: 0, Physical: 0};
+	
+	// Health and Mana:
+	this.maxHp = 0;
+	this.currentHp = 0;
+	this.poisonDamage = 0;
+	this.hpRegenTime = 0;
+	this.mpRegenTime = 0;
+	this.hpRegenTimer = 0;
+	this.mpRegenTimer = 0;
+	
+	// Movement:
+	this.movementSpeed = MOVEMENT_SPEED.NORMAL;
+	this.maxSp = 0;
+	this.currentSp = 0;
+	
+	// Create sprite:
+	this.sprite = gs.createSprite(0, 0, 'Tileset', gs.objectSpritesGroup);
+	this.sprite.anchor.setTo(0.5, 0.5);
+	this.sprite.visible = false;
+	
+	this.createCharacterUI();
+};
+
+
+gs.pc.endTurn = function (waitTime) {
+
+	/*
+	if (this.characterClass == "IceMage" && util.vectorEqual(this.tileIndex, this.startTileIndex)) {
+		if (this.indexStreak < 4) {
+			this.indexStreak += 1;
+		}
+	} else {
+		this.indexStreak = 0;
+	}*/
+
+	// Levitation pop-ups:
+	if (this.isFlying && gs.isPit(this.tileIndex)) {
+		this.popUpText(10 - this.levitationTimer);
+	}
+	
+	// Drink Blood:
+	if (this.race.name === 'Vampire' && gs.getTile(this.tileIndex).type.name === 'Blood' && this.currentHp < this.maxHp) {
+		this.consumeBlood();
+	}
+	
+	// Trailblazer:
+	if (this.startTileIndex) {
+		gs.createCloud(this.tileIndex, 'FlamingCloud', Math.round(this.maxHp * 0.25), 3);
+  	} 
+
+	this.statusEffects.onEndTurn();
+	this.waitTime = waitTime;
+	gs.endTurn();
+};
