@@ -1,0 +1,575 @@
+// Evolution
+// Increases the max hp of enemies every 5 turns (by 1) and level every 555 turns (by 1)
+
+Character.prototype.updateStats = function (tempStats = {}) {
+	if (this.hpBonus == NaN || !this.hpBonus) {
+		this.hpBonus = 0;
+	}
+
+	// Zero Out Bonus Stats:
+	this.bonusExpMod = 0;
+	this.bonusGoldMod = 0;
+	this.bonusProjectileRange = 0;
+	this.maxHpModifier = 0;
+	this.lifeTap = 0;
+	this.manaTap = 0;
+	this.maxRage = 0;
+	this.coolDownModifier = 0;
+	this.isDamageImmune = this.type.isDamageImmune;
+	this.manaConservation = 0;
+	
+	// STATS:
+	this.maxHp = 0;
+	this.maxMp = 0;
+	this.hpRegenTime = 0;
+	this.mpRegenTime = 0;
+	this.spRegenTime = 0;
+	this.hpRegenAmount = 0;
+	this.regenPerTurn = this.type.regenPerTurn;
+	
+	// OFFENSE:
+	this.maxRage = 0;
+	this.critMultiplier = CRIT_MULTIPLIER;
+	this.bonusMeleeDamage = 0;
+	this.bonusRangeDamage = 0;
+	this.bonusStaffDamage = 0;
+	this.lungeDamageMultiplier = 0;
+	this.meleeDamageMultiplier = 1.0;
+	this.rangeDamageMultiplier = 1.0;
+	this.staffDamageMultiplier = 1.0;
+	
+	// ABILITY_MULTIPLIERS:
+	this.abilityPower = 0;
+	this.magicPower = 0;
+	
+	// DEFENSE:
+	this.movementSpeed = this.type.movementSpeed;
+	this.maxSp = 0;
+	this.protection = this.type.protection;
+	this.reflection = this.type.reflection;
+	this.evasion = this.type.evasion;
+	this.blockChance = 0;
+	this.parryChance = 0;
+	this.stealth = 0;
+	
+	// RESISTANCE:
+	this.resistance.Fire = this.type.resistance.Fire;
+	this.resistance.Cold = this.type.resistance.Cold;
+	this.resistance.Shock = this.type.resistance.Shock;
+	this.resistance.Toxic = this.type.resistance.Toxic;
+	
+	// DAMAGE_SHIELD:
+	this.damageShield.Fire = this.type.damageShield.Fire;
+	this.damageShield.Cold = this.type.damageShield.Cold;
+	this.damageShield.Shock = this.type.damageShield.Shock;
+	this.damageShield.Toxic = this.type.damageShield.Toxic;
+	this.damageShield.Physical = this.type.damageShield.Physical;
+	
+	// Flaggy type stuff:
+	// Using integers in the case that multiple effects want to set this same flag (they can all just increment by 1);
+	// Also because equipment works by adding to the stat (an integer)
+	this.isFlying = this.type.isFlying;
+	this.isTelepathic = 0;
+	this.hasLifeSaving = 0;
+	this.isConfused = 0;
+	this.isSlowProjectile = this.type.isSlowProjectile;
+	this.hasSustenance = 0;
+	this.hasSpiritShield = 0;
+	this.isFeared = 0;
+	this.damageMultiplier = 0;
+	this.isDSImmune = 0;
+	this.hasBloodVampirism = 0;
+	this.mentalResistance = 0;
+	this.hasLunge = 0;
+	this.isLavaImmune = this.type.isLavaImmune;
+	this.isToxicWasteImmune = this.type.isToxicWasteImmune;
+	this.isGasImmune = this.type.isGasImmune;
+	this.isPoisonImmune = this.type.isPoisonImmune;
+	
+	// Mostly status effects:
+	this.alwaysCrit = 0;
+	this.alwaysProjectileCrit = 0;
+	this.knockBackOnHit = 0;
+	this.isWet = 0;
+	this.isFlammable = 0;
+	this.isUnstable = 0;
+	this.isStunned = 0;
+	this.isMarked = 0;
+	this.isImmobile = 0;
+	this.hasKeenHearing = 0;
+	this.hasPerfectAim = 0;
+	
+	if (this.type.isImmobile) {
+		this.isImmobile = 1;
+	}
+	
+	// Size:
+	this.size = this.type.size;
+	
+	// Attributes:
+	this.strength = this.baseAttributes.strength;
+	this.dexterity = this.baseAttributes.dexterity;
+	this.intelligence = this.baseAttributes.intelligence;
+	
+	// Encumberance:
+	this.maxEncumberance = 0;
+	this.encumberance = 0;
+	this.isEncumbered = 0;
+	
+	// Class:
+	if (this.characterClass) {
+		this.strength 		+= gs.classAttributes[this.characterClass].strength;
+		this.dexterity 		+= gs.classAttributes[this.characterClass].dexterity;
+		this.intelligence 	+= gs.classAttributes[this.characterClass].intelligence;
+	}
+	
+	// Race:
+	if (this.race) {
+		this.strength 		+= this.race.attributes.strength;
+		this.dexterity 		+= this.race.attributes.dexterity;
+		this.intelligence 	+= this.race.attributes.intelligence;
+		this.race.effect(this);
+	}
+	
+	// Max Attributes:
+	
+	// Equipment:
+	if (this.inventory) {
+		this.inventory.onUpdateStats(this);
+	}
+	
+	// NPC Class:
+	if (this.npcClassType && this.npcClassType.effect) {
+		this.npcClassType.effect(this);
+	}
+	
+	
+	// Talents:
+	if (this.talents) {
+		this.talents.onUpdateStats(this);
+	}
+		
+	// Sustained Abilities:
+	this.abilities.list.forEach(function (ability) {
+		if (ability && ability.isOn) {		
+			if (ability.type.sustainedEffect) {
+				ability.type.sustainedEffect(this);
+			}
+			this.maxMp -= ability.type.mana;
+		}
+	}, this);
+	
+	// Sustained Summons:
+	this.getActiveSummonList().forEach(function (char) {
+		if (char.type.sustainedMpCost) {
+			this.maxMp -= (char.type.sustainedMpCost - this.manaConservation);		
+		}
+	}, this);
+	
+	// Sustained Dominate:
+	if (this.talents.hasLearnedTalent('Dominate')) {
+		let charList = gs.liveCharacterList().filter(char => char.statusEffects.has('Domination'));
+		this.maxMp -= charList.length * (gs.abilityTypes.Dominate.mana - this.manaConservation);
+	}
+	
+	// Religion:
+	if (this.religion && gs.religionTypes[this.religion].effect) {
+		gs.religionTypes[this.religion].effect(this);
+	}
+	
+	// Cap Attributes:
+	if (this.characterClass && this.race) {
+		this.maxAttributes.strength = 2 * (10 + gs.classAttributes[this.characterClass].strength + this.race.attributes.strength);
+		this.maxAttributes.dexterity = 2 * (10 + gs.classAttributes[this.characterClass].dexterity + this.race.attributes.dexterity);
+		this.maxAttributes.intelligence = 2 * (10 + gs.classAttributes[this.characterClass].intelligence + this.race.attributes.intelligence);
+		
+		this.strength = Math.min(this.strength, this.maxAttributes.strength);
+		this.dexterity = Math.min(this.dexterity, this.maxAttributes.dexterity);
+		this.intelligence = Math.min(this.intelligence, this.maxAttributes.intelligence);
+	}
+	
+	
+	// Strength Attribute Bonus:
+	if (this.name === 'Player') {
+		this.maxHp += 				(this.strength - 10) * PC_HP_PER_STR[this.race.name];
+		this.maxEncumberance += 	this.strength;
+
+		// Dexterity Attribute Bonus:
+		this.maxSp += 	this.dexterity - 10;
+		this.evasion += (this.dexterity - 10) * PC_EVASION_PER_DEX[this.race.name];
+
+		// Intelligence Attribute Bonus:
+		this.abilityPower += 		(this.intelligence - 10) * PC_ABILITY_POWER_PER_INT[this.race.name];
+		this.maxMp += 				(this.intelligence - 10) * PC_MAX_MP_PER_INT;
+	}
+	
+	
+	// Temp Max MP:
+	if (tempStats.maxMp) {
+		this.maxMp += tempStats.maxMp;
+	}
+	
+	// Encumberance:
+	if (this.type.name === 'Player' && this.encumberance > this.maxEncumberance && this.race.name !== 'Ogre') {
+		this.isEncumbered += 1;
+		
+		// Apply Penalties:
+		let delta = this.maxEncumberance - this.encumberance;
+		this.abilityPower += delta * PC_ABILITY_POWER_PENALTY_PER_ENC;
+	}
+	
+	this.lungeDamageMultiplier += this.abilityPower;
+
+	this.maxHp += this.hpBonus;
+	
+	// PC Hit Points:
+	if (this.type.name === 'Player') {
+		// Hit Points:
+		this.maxHp += this.permanentHpBonus;
+		this.maxHp += PC_BASE_MAX_HP;
+		//this.maxHp += (this.level - 1) * PC_MAX_HP_PER_XL;
+		
+		// Size Bonus:
+		if (this.size === 1) {
+			this.maxHp += 8;
+		}
+		else if (this.size === 2) {
+			this.maxHp += 16;
+		}
+		
+		// Modifier:
+		this.maxHp = Math.round(this.maxHp + this.maxHp * this.maxHpModifier);
+		
+		// Mana Points:
+		this.maxMp += PC_BASE_MAX_MP;
+		this.maxMp += this.permanentMpBonus;
+		
+		// Speed Points:
+		this.maxSp += PC_BASE_MAX_SP;
+		
+		// HP Regen:
+		this.hpRegenTime += this.getPCHPRegen().turns;
+		this.hpRegenAmount += this.getPCHPRegen().hp;
+		
+		// MP Regen:
+		this.mpRegenTime += PC_BASE_MP_REGEN_TURNS;
+		
+		// SP Regen:
+		this.spRegenTime += PC_BASE_SP_REGEN_TURNS;
+	}
+	// NPC Max Hit Points:
+	else {
+		// Special yendor:
+		if (this.type.niceName === 'The Wizard Yendor') {
+			this.maxHp = YENDOR_MAX_HP[this.yendorVersion - 1];
+		}
+		// Scaling hit points:
+		else if (this.type.hitPointType) {
+			this.maxHp += gs.npcMaxHp(this.level, this.type);
+		}
+		// Static hit points:
+		else {
+			this.maxHp += this.type.maxHp;
+		}
+		
+		this.maxMp += this.type.maxMp;
+		
+		this.hpRegenTime = Math.round(HP_REGEN_TIME / this.maxHp);
+		this.mpRegenTime = Math.round(MP_REGEN_TIME / this.maxMp);
+		this.hpRegenAmount = 1;
+	}
+	
+	
+	
+	// Wands and Charms consuming maxMP:
+	if (this.inventory) {
+		this.inventory.consumeMaxMp(this);
+	}
+	
+	// Make sure to remove sustained effects if player does not have enough mana:
+	while (this.maxMp < 0 && this.abilities.list.find(ability => ability && ability.isOn)) {
+		let ability = this.abilities.list.find(ability => ability && ability.isOn);
+		ability.isOn = false;
+		this.maxMp += ability.type.mana;
+	}
+	
+	// Status Effects:
+	this.statusEffects.onUpdateStats();
+	
+	// Shield and Block-Chance:
+	if (this.name === 'Player' && !this.inventory.hasShieldEquipped()) {
+		this.blockChance = 0;
+	}
+	
+	this.maxFood = PC_BASE_MAX_FOOD;
+	this.expMod = 1 + this.bonusExpMod;
+	this.goldMod = 1 + this.bonusGoldMod;
+	
+	// Cap Stats:
+	this.capStats();
+	
+	// Achievements:
+	if (this === gs.pc) {
+		if (this.maxMp >= 60) {
+			achievements.get('INFINITE_ENERGY');
+		}
+		
+		if (this.maxHp >= 200) {
+			achievements.get('THE_TANKIEST_TANK');
+		}
+		
+		if (this.maxSp >= 20) {
+			achievements.get('TIME_LORD');
+		}
+		
+		
+	}
+};
+NPC.prototype.init = function (tileIndex, typeName, flags) {
+	ASSERT_EQUAL(gs.npcTypes.hasOwnProperty(typeName), true, 'Invalid npcTypeName: ' + typeName);
+	ASSERT_EQUAL(gs.getChar(tileIndex), null, 'TileIndex is already occupied');
+	
+	this.hpBonus = 0;
+
+	// Default Flags:
+	flags = flags || {isAsleep: false, npcClassType: null, isWandering: false};
+	
+	// Type and name:
+	this.type = gs.npcTypes[typeName];
+	this.name = this.type.name;
+	
+	// Setting ID:
+	if (flags.id) {
+		this.id = flags.id;
+	}
+	else {
+		this.id = gs.nextCharacterID;
+		gs.nextCharacterID += 1;
+	}
+	
+	// Negate Sleep:
+	if (this.type.neverSleep) {
+		flags.isAsleep = false;
+	}
+	
+	// Negate Wandering:
+	if (flags.isAsleep || this.type.neverWander) {
+		flags.isWandering = false;
+	}
+
+	// Property Flags:
+	this.isAlive = true;
+	this.isAgroed = false;
+	this.faction = this.type.faction;
+	this.isAsleep = Boolean(flags.isAsleep);
+	this.npcClassType = flags.npcClassType;
+	this.isWandering = Boolean(flags.isWandering);
+	this.isRunning = false;
+	this.isFlying = Boolean(this.type.isFlying);
+	this.burstDamage = flags.burstDamage || 0;
+	this.actionQueue = [];
+	this.moveDelta = {x: 0, y: 0};
+	this.timeToHatch = 0;
+	this.poisonDamage = 0;
+	this.lightningRodTileIndex = null;
+
+	if (typeName === 'Merchant') {
+		this.hasStockedItems = false;
+	}
+	
+	// Summon Properties:
+	this.summonerId = flags.summonerId || null; 		// Summoned creatures store their owner here
+	this.summonIDList = []; 							// The summoner stores all summoned creatures so they can poof upon death.
+	this.summonDuration = flags.summonDuration || 20;	// The duration before a summon creature will naturally poof
+	this.cloudIDList = [];
+	
+	// Hiding (only used for submerged enemies right now)
+	this.isHidden = false;
+	
+	if (this.type.startHidden) {
+		if (this.type.canSwim) {
+			// Aquatic enemies are only hidden if they start in a liquid:
+			if (gs.isUncoveredLiquid(tileIndex)) {
+				this.isHidden = true;
+				this.isAsleep = false;
+			}		
+		} 
+		else {
+			this.isHidden = true;
+			this.isAsleep = false;
+		}
+		
+	} 
+	
+	
+	// AI:
+	this.unagroTimer = 0;
+	this.wanderVector = {x: util.randInt(-1, 1), y: util.randInt(-1, 1)};
+	
+	
+	// Set Level and stats:
+	this.level = flags.level || this.type.level;
+	
+	// Adjusting maxHP by level:
+	if (this.type.hitPointType) {
+		this.maxHp = gs.npcMaxHp(this.level, this.type);
+	}
+	// Unless the npcType only defines a static maxHp (typically uniques)
+	else {
+		this.maxHp = this.type.maxHp;
+	}
+	
+	this.maxMp = this.type.maxMp;
+	
+	this.exp = this.type.exp;
+	this.regenTimer = 0;
+
+	// Elite:
+	if (this.npcClassType) {
+		this.exp = this.type.exp * 2;	
+	}
+	
+	// Abilities:
+	this.maxAbilityRange = 0;
+	this.abilities.clear();
+	if (this.type.abilityTypes) {
+		this.type.abilityTypes.forEach(function (abilityType) {
+			this.abilities.addAbility(abilityType);
+			this.maxAbilityRange = Math.max(this.maxAbilityRange, abilityType.range(this));
+		}, this);
+	}
+	
+	
+	
+	// Status effects:
+	this.statusEffects = new StatusEffects(this);
+	
+	// Event Queue:
+	this.eventQueue.clear();
+	
+	// Pop up queue:
+	this.popUpTimer = 0;
+	this.popUpQueue = [];
+	
+	// Sprite:
+	this.sprite.frame = this.type.frame;
+	this.sprite.angle = 0;
+	this.ringSprite.frame = 0;
+	
+	
+	// Base Sprite:
+	if (this.type.horizontalBaseFrame) {
+		this.baseSprite = gs.createSprite(0, 0, 'Tileset', gs.underObjectSpritesGroup);
+		this.baseSprite.anchor.setTo(0.5, 0.5);
+		this.baseSprite.frame = this.type.horizontalBaseFrame;
+	}
+	
+	// Yendor Head sprite:
+	if (this.type.niceName === 'The Wizard Yendor') {
+		this.baseSprite = gs.createSprite(0, 0, 'Tileset', gs.overObjectSpritesGroup);
+		this.baseSprite.anchor.setTo(0.5, 1.0);
+		this.baseSprite.frame = this.type.frame - 32;
+	}
+	
+	// Light:
+	if (this.type.light) {
+		this.light = gs.createLightCircle(this.sprite.position, this.type.light.color, this.type.light.radius, 0, this.type.light.startAlpha);
+		this.light.fade = false;
+		this.light.noLife = true;
+	}
+	else {
+		this.light = null;
+	}
+	
+	// Push to lists:
+	if (util.inArray(this, gs.characterList)) {
+		console.log('In characterList');
+	}
+	
+	gs.characterList.push(this);
+	
+	// Initial rotation facing:
+	if (this.type.rotateAim) {
+		this.rotFacing = util.randElem(['UP', 'DOWN', 'LEFT', 'RIGHT']);
+		this.rotateToFace();
+	}
+	
+	
+	this.updateStats();
+	this.currentHp = this.maxHp;
+	this.currentMp = this.maxMp;
+	
+	// We may need to start dominated in case we immediately take damage (slime splitting special case):
+	if (flags.startDominated) {
+		this.dominate(flags.startDominated);
+	}
+
+	// Place in tileMap:
+	// Do so last to guarantee that the character has fully initialized (in case it takes damage or something)
+	this.body.snapToTileIndex(tileIndex);
+	this.facing = util.frac() <= 0.5 ? 'RIGHT' : 'LEFT';
+	this.previousTileIndex = {x: tileIndex.x, y: tileIndex.y};
+	
+	if (this.name === 'GobletShield') {
+		gs.getTile(this.tileIndex.x - 1, this.tileIndex.y).character = this;
+		gs.getTile(this.tileIndex.x + 1, this.tileIndex.y).character = this;
+		this.isAgroed = true;
+	}
+	
+	// For debugging:
+	this.startTileIndex = {x: this.tileIndex.x, y: this.tileIndex.y};
+
+};
+NPC.prototype.updateTurn = function () {
+	// Don't update dead npcs:
+	if (!this.isAlive) {
+		return;
+	}
+
+	if (this.faction == FACTION.HOSTILE && gs.turn % 5 == 0) {
+		this.hpBonus += 1;
+		if (gs.turn % 111 == 0 && gs.turn != 0) {
+			this.level += 1;
+		}
+	}
+
+	// Lose agro:
+	if (this.isAgroed && !gs.getTile(this.tileIndex).visible && !this.type.alwaysAgroed && this.faction !== FACTION.PLAYER) {
+		this.unagroTimer += 1;
+		if (this.unagroTimer >= NPC_UNAGRO_TIME && !this.type.neverUnagro) {
+			this.isAgroed = false;
+		}
+	}
+	
+	// Reset agro timer:
+	if (this.isAgroed && gs.getTile(this.tileIndex).visible) {
+		this.unagroTimer = 0;
+	}
+	
+	// Special type updateTurn function:
+	if (this.type.updateTurn) {
+		this.type.updateTurn.call(this);
+	}
+	
+	// Swimmers die if out of lava / water:
+	if (this.type.isSwimmer && !util.inArray(gs.getTile(this.tileIndex).type.name, ['Lava', 'Water', 'ToxicWaste'])) {
+		this.takeDamage(Math.ceil(this.maxHp / 5), 'NONE', {neverCrit: true});
+	}
+	
+	// An NPC may kill itself during its update turn call and we need to return before proceding:
+	if (!this.isAlive) {
+		return;
+	}
+	
+	if (this.npcClassType && this.npcClassType.updateTurn) {
+		this.npcClassType.updateTurn.call(this);
+	}
+	
+	// Summon Duration:
+	if (this.summonerId) {
+		this.reduceSummonDuration();
+	}
+
+	this.updateTurnBase();
+	this.updateStats();
+};
