@@ -1,0 +1,12 @@
+// Anti Domination Immunity - For Fun
+// Makes ALL enemies not be immune to domination (even yendor, though dominating him will break the game)
+
+for (let i=0; i<gs.npcTypeList.length; i +=1){
+	gs.npcTypeList[i].isDominateImmune = false;
+}
+Character.prototype.canDominate = function () {
+	return !this.type.isImmobile
+		&& !this.type.isMindless
+		&& !this.statusEffects.has('Domination')
+		&& !this.statusEffects.has('ScrollOfDomination');
+};
