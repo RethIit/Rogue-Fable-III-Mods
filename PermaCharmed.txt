@@ -1,0 +1,230 @@
+// PermaCharmed - Challenge
+// Makes you permanently charmed to a random enemy on a floor
+// The enemy you are charmed to is reset if you switch floors or kill the current one
+
+PlayerCharacter.prototype.cantMoveFromCharm = function (tileIndex) {	
+	if (this.statusEffects.has('NPCCharm') && !this.isMultiMoving) {
+		let npc = gs.getCharWithID(this.statusEffects.get('NPCCharm').casterId);
+
+		if (npc) {
+			if (util.distance(tileIndex, npc.tileIndex) > util.distance(this.tileIndex, npc.tileIndex) + 0.5) {
+				return true;
+			}
+        }
+	}
+	
+	return false;
+};
+
+	gs.statusEffectTypes.NPCCharm.requiresLoS = false;
+	gs.statusEffectTypes.NPCCharm.destroyOnZoning = false;
+	gs.statusEffectTypes.NPCCharm.dontSave = false;
+	gs.statusEffectTypes.NPCCharm.onUpdateStats = function (character) {
+		let list = gs.getAllNPCs().filter(char => char.faction == FACTION.HOSTILE)
+		if (list.length > 0) {
+			list.sort((a, b) => util.distance(character.tileIndex, a.tileIndex) - util.distance(character.tileIndex, b.tileIndex));
+			if (list.length > 0) {
+				this.casterId = list[0].id;
+			}
+		}
+	};
+	gs.statusEffectTypes.NPCCharm.desc = function () {
+		var caster = gs.getCharWithID(this.casterId);
+		let str;
+
+		if (caster) {
+			str = 'You have been charmed by ';
+		
+			if (!caster.isBoss) {
+				str += 'a ';
+			}
+		
+			str += gs.capitalSplit(caster.name);
+
+			let distance = util.distance(caster.tileIndex, gs.pc.tileIndex);
+			gs.getIndexListInRadius(caster.tileIndex, distance).forEach(function (index) {
+				gs.targetSprites.create(index, PURPLE_TARGET_BOX_FRAME)
+			});
+		} else {
+			str = "You will be charmed by an enemy next turn if one is available.";
+		}
+		return str;
+	};
+
+HUD.prototype.refreshStatusEffects = function () {
+	var i, j = 0;
+
+	for (i = 0; i < gs.pc.statusEffects.list.length; i += 1) {
+		if (!gs.pc.statusEffects.list[i].dontShowOnHUD) {
+			this.statusEffectText[j].visible = true;
+			this.statusEffectText[j].setText(gs.pc.statusEffects.list[i].toShortDesc());
+			j += 1;
+		}
+	}
+	
+	// Show it poisoned:
+	if (gs.pc.poisonDamage > 0) {
+		this.statusEffectText[j].setText('Poisoned');
+		this.statusEffectText[j].visible = true;
+		j += 1;
+	}
+	
+	// Show is asleep:
+	if (gs.pc.isAsleep) {
+		this.statusEffectText[j].setText('Sleeping');
+		this.statusEffectText[j].visible = true;
+		j += 1;
+	}
+	
+	// Show is hungry:
+	if (gs.pc.isHungry()) {
+		this.statusEffectText[j].setText('Hungry');
+		this.statusEffectText[j].visible = true;
+		j += 1;
+	}
+
+	// Show levitation timer:
+	if (gs.pc.levitationTimer > 0) {
+		this.statusEffectText[j].setText('Levitating: ' + (11 - gs.pc.levitationTimer));
+		this.statusEffectText[j].visible = true;
+		j += 1;
+	}
+	
+	// Hide remaining status effect text:
+	for (j = j; j < MAX_STATUS_EFFECTS; j += 1) {
+		this.statusEffectText[j].visible = false;
+	}
+	
+	// Highlight if mouse over:
+	for (let i = 0; i < MAX_STATUS_EFFECTS; i += 1) {
+		if (i < this.statusEffectText.length && this.statusEffectText[i].input.checkPointerOver(game.input.activePointer)) {
+			this.statusEffectText[i].setText('[' + this.statusEffectText[i].text.text + ']');
+		}
+	}
+	
+	// Status Effect Caster Sprite:
+	for (let i = 0; i < MAX_STATUS_EFFECTS; i += 1) {
+		if (i < gs.pc.statusEffects.list.length && this.statusEffectText[i].input.checkPointerOver(game.input.activePointer)) {
+			if (gs.pc.statusEffects.list[i].casterId) {
+				let caster = gs.getCharWithID(gs.pc.statusEffects.list[i].casterId);
+				if (caster) {
+					gs.targetSprites.create(caster.tileIndex, GREEN_TARGET_BOX_FRAME);
+                }
+			}
+		}
+	}
+};
+
+StatusEffects.prototype.onMentalCure = function () {
+	// Cure Confusion:
+	if (this.has('Confusion')) {
+		this.remove('Confusion');
+	}
+};
+
+NPC.prototype.death = function (damageType, flags) {
+	var itemName, dropIndex;
+	flags = flags || {};	
+
+	// Drop Loot:
+	this.dropLoot();
+	
+	// Destroy:
+	this.destroy();
+	
+	// Random chance to shout upon death:
+	if (util.frac() < 0.5) {
+		this.shout();
+	}
+	
+	// Slime King will not give EXP unless he is last one alive:
+	if (this.type.name === 'ExpanderisTheSlimeKing' && gs.characterList.filter(char => char.type.name === 'ExpanderisTheSlimeKing' && char.isAlive).length > 0) {
+		// Pass
+	}
+	else {
+		gs.pc.gainExperience(this.killedExp());
+	}
+	
+
+	// Blood:
+	if (!gs.getObj(this.tileIndex) && !this.type.noBlood && !gs.isPit(this.tileIndex)) {
+		gs.createObject(this.tileIndex, this.type.bloodTypeName);
+	}
+	
+	// Rage:
+	if (gs.pc.maxRage > 0 && flags.killer === gs.pc) {
+		gs.pc.gainRage(1);
+	}
+	
+	// Poof my summoned mobs:
+	this.summonIDList.forEach(function (id) {
+		if (gs.getCharWithID(id)) {
+			if (gs.getCharWithID(id).type.name !== 'Tentacle') {
+				gs.getCharWithID(id).popUpText('Poof!');
+			}
+			
+			gs.getCharWithID(id).death();
+		}
+	});
+	
+	// Poof my summoned clouds:
+	this.cloudIDList.forEach(function (id) {
+		let cloud = gs.getCloudWithID(id);
+		if (cloud) {
+			gs.createPopUpTextAtTileIndex(cloud.tileIndex, 'Poof!');
+			cloud.destroy();
+		}
+	}, this);
+	
+	// Tell my summoner I'm dead:
+	if (this.summonerId && gs.getCharWithID(this.summonerId)) {
+		util.removeFromArray(this.id, gs.getCharWithID(this.summonerId).summonIDList);
+	}
+	
+	// Player status effects: charm, constrict, curses etc.
+	gs.pc.statusEffects.onNPCDeath();
+	
+	// Poof:
+	if (this.name !== 'GobletShield') {
+		gs.createParticlePoof(this.tileIndex);
+	}
+	
+	
+	// Sound:
+	gs.playSound(gs.sounds.death, this.tileIndex);
+	
+	// Shake:
+	if (this.name === 'GobletShield') {
+		game.camera.shake(0.005, 200);
+		game.camera.flash(0xffffff, 30);
+	}
+	else {
+		game.camera.shake(0.005, 100);
+		game.camera.flash(0xffffff, 10);
+	}
+	
+	
+	// onDeath Func:
+	if (this.type.onDeath) {
+		this.type.onDeath.use(this);
+	}
+	
+	// Special Yendor Stuff:
+	if (this.type.niceName === 'The Wizard Yendor') {
+		this.yendorDeath();
+	}
+	
+	gs.HUD.miniMap.refresh();
+	
+	// Achievements:
+	if (flags.killer === gs.pc) {
+		gs.pc.numKills += 1;
+	}
+	
+	// End turn:
+	if (gs.activeCharacter() === this) {
+		this.endTurn(ACTION_TIME);
+	}
+};
+
+gs.pc.statusEffects.add("NPCCharm", {duration: 10000000, casterId: 30});
