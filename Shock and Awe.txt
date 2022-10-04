@@ -1,0 +1,8 @@
+Shock.prototype.canSpreadOn = function (tileIndex) {
+    if (gs.getEffect(tileIndex)) {
+        return false;
+    }
+    else {
+        return true;
+    }
+};
