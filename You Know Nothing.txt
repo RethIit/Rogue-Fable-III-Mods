@@ -1,0 +1,295 @@
+// You Know Nothing
+// Hides all MP, SP and HP values from you that are not maximums
+// You no longer know how close you are to leveling up
+
+UIBar.prototype.setPercent = function (percent) {
+	if (percent === 0) {
+		this.bar.visible = false;
+	}
+	else {
+		this.bar.visible = true;
+		this.bar.scale.setTo(Math.max(0, 62 * SCALE_FACTOR), SCALE_FACTOR);
+	}
+};
+
+UIBar.prototype.setText = function (str) {
+	this.text.setText("???");
+};
+HUD.prototype.refreshBars = function () {
+	// Update Text:
+	
+	this.hpBar.setText('HP: ' + gs.pc.currentHp + '/' + gs.pc.maxHp);
+	this.mpBar.setText('MP: ' + gs.pc.currentMp + '/' + gs.pc.maxMp);
+	this.foodBar.setText('FD: ' + gs.pc.currentFood + '/' + gs.pc.maxFood);
+	this.coldBar.setText('COLD: ' + gs.pc.coldLevel + '/' + MAX_COLD_LEVEL);
+	this.rageBar.setText('RAGE: ' + gs.pc.rage + '/' + gs.pc.maxRage);
+	this.spBar.setText('SP: ' + gs.pc.currentSp + '/' + gs.pc.maxSp);
+	
+	// Update Bars:
+	this.mpBar.setPercent(1);
+	this.foodBar.setPercent(1);
+	this.coldBar.setPercent(gs.pc.coldLevel / MAX_COLD_LEVEL);
+	this.rageBar.setPercent(gs.pc.rage / gs.pc.maxRage);
+	this.spBar.setPercent(1);
+	
+	// Exp Bar:
+	this.XLText.setText("???");
+	this.expBarText.setText("???" + '%');
+	if (gs.pc.expPercent() === 0) {
+		this.expBar.visible = false;
+	}
+	else {
+		this.expBar.visible = true;
+		this.expBar.scale.setTo(SCALE_FACTOR, 0.01 * -23 * SCALE_FACTOR);
+	}
+	
+	// Hide EXP Text at XL:16
+	if (gs.pc.level === 16) {
+		this.expBarText.visible = false;
+		this.expBar.visible = false;
+	}
+	else {
+		this.expBarText.visible = true;
+	}
+	
+	// SHOW OR HIDE BARS:
+	this.rageBar.setVisible(false);
+	this.coldBar.setVisible(false);
+	
+	let activeBars = [];
+	
+	if (gs.pc.maxRage) {
+		activeBars.push('rageBar');
+	}
+	
+	if (gs.zoneType().isCold && gs.pc.resistance.Cold < AMBIENT_COLD_RESISTANCE) {
+		activeBars.push('coldBar');
+	}
+		
+	for (let i = 0; i < activeBars.length; i += 1) {
+		this[activeBars[i]].setVisible(true);
+		this[activeBars[i]].setPosition(HUD_START_X - 132, 2 + i * 26);
+	}
+	
+
+	// Update Bar Scale:
+	this.hpBar.bar.scale.setTo(Math.max(0, Math.floor(62) * SCALE_FACTOR), SCALE_FACTOR);
+	
+	// Poison Bar:
+	if (gs.pc.poisonDamage > 0) {
+		this.poisonBar.visible = true;
+		this.poisonBar.x = this.hpBar.bar.x + Math.max(0, Math.floor(62* SCALE_FACTOR));
+		this.poisonBar.scale.setTo(Math.max(0, Math.ceil(62 * SCALE_FACTOR), SCALE_FACTOR));
+	}
+	else {
+		this.poisonBar.visible = false;
+	}
+	
+	// Update Text Color:
+	this.hpBar.text.setFont(gs.pc.currentHp < gs.pc.maxHp / 4 		? 'PixelFontOutline6-Red' : 'PixelFontOutline6-White');
+	this.mpBar.text.setFont(gs.pc.currentMp < gs.pc.maxMp / 4 		? 'PixelFontOutline6-Red' : 'PixelFontOutline6-White');
+	this.foodBar.text.setFont(gs.pc.currentFood <= 3 				? 'PixelFontOutline6-Red' : 'PixelFontOutline6-White');
+    this.coldBar.text.setFont(gs.pc.coldLevel === MAX_COLD_LEVEL 	? 'PixelFontOutline6-Red' : 'PixelFontOutline6-White');
+	
+	if (gs.pc.statusEffects.has('Slow') || gs.pc.isEncumbered) {
+		this.spBar.text.setFont('PixelFontOutline6-Red');
+	}
+	else {
+		this.spBar.text.setFont('PixelFontOutline6-White');
+	}
+	
+	
+	// Mummy has no food:
+	if (gs.pc.race && gs.pc.race.name === 'Mummy') {
+		this.foodBar.setVisible(false);
+	}
+	else {
+		this.foodBar.setVisible(true);
+	}
+};
+
+HUD.prototype.refresh = function () {
+	// Game has not started yet:
+	if (!gs.zoneName || !this.allowRefresh) {
+		return;
+	}
+	
+	this.menu.frame = 2;
+	this.redBorder.visible = false;
+	
+	// Refresh Item Slots:
+	this.meleeSlot.refresh();
+	this.rangeSlot.refresh();
+	
+	// Refresh Item Lists:
+	this.consumableList.refresh();
+
+	// Refresh sub-systems:
+	this.abilityBar.refresh();
+	this.refreshWeaponText(gs.characterMenu.deltaChar);
+	this.refreshSlotSelectors();
+	this.refreshStateText();
+	this.refreshDebugText();
+	this.refreshChatLog();
+	this.refreshBars();
+	this.refreshStatusEffects();
+	this.refreshZoneTitle();
+	
+	this.miniMap.update();
+};
+
+
+Character.prototype.updateUIText = function () {
+	this.hpText.setText("???");
+	this.hpText.x = this.body.position.x - 24;
+	this.hpText.y = this.body.position.y + 14;
+	
+	// Offset adjacent enemy HP to not block mana
+	if (this !== gs.pc && this.tileIndex.x === gs.pc.tileIndex.x + 1 && this.tileIndex.y === gs.pc.tileIndex.y) {
+		this.hpText.x = this.body.position.x;
+	}
+	
+	if (this.mpText) {
+		this.mpText.setText("???");
+		this.mpText.x = this.body.position.x + 8;
+		this.mpText.y = this.body.position.y + 14;
+		this.mpText.visible = gs.globalData.useMPText;
+	}	
+};
+
+NPC.prototype.getDesc = function () {
+	var desc = {title: '', text: ''};
+	
+	// Name:
+	if (this.npcClassType) {
+		desc.title += this.npcClassType.name + ' ' + this.type.niceName;
+	}
+	else {
+		desc.title += this.type.niceName;
+	}
+	
+	// Hidden Title:
+	if (this.isHidden) {
+		desc.title += ' (Hidden)';
+	}
+	
+	
+	// Early Return for Pots:
+	if (this.name === 'FirePot' || this.name === 'GasPot') {
+		desc.text += 'Damage: ' + gs.getTrapDamage(this.name) + '\n\n';
+		
+		desc.text += 'Hold [Z] key to attack.';
+		
+		return desc;
+	}
+	
+	// Early return for neutral enemies like merchants, crates, etc.
+	if (this.faction === FACTION.NEUTRAL || this.faction === FACTION.DESTRUCTABLE || this.type.hideInterface) {
+		if (this.burstDamage) {
+			desc.text = 'Damage: ' + this.burstDamage;
+		}
+		return desc;
+	}
+	
+	// Early Return for Goblet Shield:
+	if (this.name === 'GobletShield') {
+		desc.text = 'HP: ' + this.currentHp + '/' + this.maxHp + '\n';
+		return desc;
+	}
+	
+	// Early Return for Inferno Orb:
+	if (this.name === 'SpectralOrb') {
+		desc.text = 'Damage: ' + this.burstDamage + '\n';
+		desc.text += 'Duration: ' + this.summonDuration;
+		return desc;
+	}
+	
+	// Early Return for Fire Ball:
+	if (this.name === 'HomingFireOrb') {
+		desc.text = 'HP: ' + this.currentHp + '/' + this.maxHp + '\n';
+		desc.text += 'Damage: ' + this.burstDamage;
+		return desc;
+	}
+	
+	// Set level color:
+	if (this.level < gs.pc.level - 2) {
+		desc.font = 'PixelFont6-Green';
+	}
+	else if (this.level < gs.pc.level) {
+		desc.font = 'PixelFont6-Blue';
+	}
+	else if (this.level > gs.pc.level + 2) {
+		desc.font = 'PixelFont6-Red';
+	}
+	else if (this.level > gs.pc.level) {
+		desc.font = 'PixelFont6-Yellow';
+	}
+	else {
+		desc.font = null;
+	}
+	
+	// Level:
+	desc.text += 'Level: ??? \n';
+	
+	// HP:
+	desc.text += 'HP: ??? / ' + this.maxHp + '\n';
+	
+	// size:
+	desc.text += 'Size: ??? \n';
+
+	// Defense:
+	DAMAGE_TYPES.forEach(function (type) {
+		if (this.resistance[type] > 0) {
+			desc.text += type + ' Resistant\n';
+		}
+		else if (this.resistance[type] < 0) {
+			desc.text += 'Vulnerable to ' + type + '\n';
+		}
+	}, this);
+	
+	// Armored:
+	if (this.protection > 0) {
+		desc.text += 'Protection: ' + this.protection + '\n';
+	}
+	
+	// Reflective:
+	if (this.reflection > 0) {
+		desc.text += 'Reflective\n';
+	}
+	
+	// DAMAGE_SHIELD:
+	DAMAGE_TYPES.forEach(function (damageType) {
+		if (this.damageShield[damageType] > 0) {
+			desc.text += damageType + ' Damage Shield: ' + this.damageShield[damageType] + '\n';
+		}
+	}, this);
+	
+	// ABILITIES:
+	this.abilities.list.forEach(function (ability) {
+		if (ability && !ability.type.dontShowInDesc) {
+			let str = '';
+			
+			// Ability has a specific toShortDesc function:
+			if (ability.type.toShortDesc) {
+				str += ability.type.toShortDesc(this);
+			}
+			// Generic Desc:
+			else {
+				str += '*' + ability.type.niceName;
+
+				if (ability.type.attributes && ability.type.attributes.damage) {
+					str += ': ' + ability.type.attributes.damage.value(this) + ' DMG';
+				}
+			}
+				
+			desc.text += str + '\n';
+		}
+	}, this);
+	
+	// Reflective:
+	if (this.type.isCorrosive) {
+		desc.text += '\nDegrades the enchantment of melee weapons when attacked.\n';
+	}
+	
+	return desc;
+};
