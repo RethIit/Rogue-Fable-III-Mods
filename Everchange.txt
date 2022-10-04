@@ -1,0 +1,73 @@
+// Everchange
+// Whenever you descend to a new floor your talents are randomly rerolled.
+
+MAX_ABILITIES = 50;
+gs.generateLevel = function () {
+	var success = false, attempt = 0;
+	
+	while (!success) {
+		success = true;
+		
+		// Seed Generator:
+		// Note we must add the attempt in order to not just keep regening same seed
+		if (this.seed) {
+			util.seedRand([this.seed, this.zoneName, this.zoneLevel, attempt]);
+		}
+		
+		// During debug we can throw LEVEL_GENERATION exceptions that would normally result in a re-gen
+		if (gs.debugProperties.throwAllExceptions) {
+			this.generateLevelFunc();
+		}
+		// During live version:
+		else {
+			try {
+				this.generateLevelFunc();
+			}
+			catch (e) {
+				// Rethrow non-level-gen exceptions:
+				if (e.type !== EXCEPTION_TYPE.LEVEL_GENERATION && e.type !== EXCEPTION_TYPE.AREA_GENERATION) {
+					throw e;
+				}
+				// Else we simply log the message and re-gen
+				else {
+					success = false;
+					
+					if (gs.debugProperties.logLevelGenExceptions) {
+						console.log('Failed to generate ' + gs.zoneName + ':' + gs.zoneLevel + ' attempting again');
+						console.log(e);
+					}
+					
+					
+					gs.destroyLevel();
+					attempt += 1;
+				}
+			}
+		}
+		
+		if (attempt > 40) {
+			throw 'Failed to generate ' + gs.zoneName + ':' + gs.zoneLevel + ' after 40 attemps.';
+		}
+	}
+
+	let type;
+	let num = 1;
+	let slot;
+	gs.pc.abilities.list.forEach(function (ability) {
+		ability = null;
+	});
+	for (let i = 0; i < 8; i++) {
+		gs.HUD.abilityBar.abilityList[i] = null;
+	}
+	gs.pc.talents.talentList.forEach(function (talent) {
+		type = gs.talentList[util.randInt(0, gs.talentList.length-1)];
+		talent.type = type;
+		if (talent.rank != 0 && type.ability) {
+			gs.pc.addAbility(type.ability);
+			slot = gs.HUD.abilityBar.abilitySlots[num];
+			if (slot) {
+				slot.slot = -1;
+			}
+			num++;
+		}
+	});
+};
